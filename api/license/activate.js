@@ -1,4 +1,5 @@
-﻿const LICENSE_API_URL = 'https://api.lemonsqueezy.com/v1/licenses/activate';
+﻿const LICENSE_API_URL = 'https://payhip.com/api/v2/license/verify';
+const EXPECTED_PRODUCT_KEY = process.env.PAYHIP_PRODUCT_KEY || '4pF7G';
 
 function readJsonBody(req) {
   if (req.body && typeof req.body === 'object') {
@@ -12,19 +13,36 @@ function asString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function matchesExpectedProduct(meta) {
-  const expectedProductId = process.env.LEMON_SQUEEZY_PRODUCT_ID;
-  const expectedVariantId = process.env.LEMON_SQUEEZY_VARIANT_ID;
+function hasPayhipSecret() {
+  return Boolean(asString(process.env.PAYHIP_PRODUCT_SECRET_KEY));
+}
 
-  if (expectedProductId && String(meta?.product_id) !== String(expectedProductId)) {
-    return false;
+async function verifyPayhipLicense(licenseKey) {
+  const url = new URL(LICENSE_API_URL);
+  url.searchParams.set('license_key', licenseKey);
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      'product-secret-key': process.env.PAYHIP_PRODUCT_SECRET_KEY
+    }
+  });
+
+  const data = await response.json();
+  const license = data?.data || {};
+
+  if (!response.ok || !license?.enabled || String(license.product_link) !== String(EXPECTED_PRODUCT_KEY)) {
+    return {
+      ok: false,
+      error: data?.error || 'License verification failed'
+    };
   }
 
-  if (expectedVariantId && String(meta?.variant_id) !== String(expectedVariantId)) {
-    return false;
-  }
-
-  return true;
+  return {
+    ok: true,
+    license
+  };
 }
 
 module.exports = async function handler(req, res) {
@@ -33,7 +51,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const { licenseKey, instanceName } = readJsonBody(req);
+  const { licenseKey } = readJsonBody(req);
   const key = asString(licenseKey);
 
   if (!key) {
@@ -41,40 +59,25 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const body = new URLSearchParams({
-    license_key: key,
-    instance_name: asString(instanceName) || 'my-todo-app'
-  });
+  if (!hasPayhipSecret()) {
+    res.status(500).json({ ok: false, error: 'Missing Payhip product secret key' });
+    return;
+  }
 
   try {
-    const response = await fetch(LICENSE_API_URL, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body
-    });
+    const result = await verifyPayhipLicense(key);
 
-    const data = await response.json();
-    const meta = data?.meta || {};
-    const license = data?.license_key || {};
-
-    if (!response.ok || !data?.activated || license?.status !== 'active' || !matchesExpectedProduct(meta)) {
-      res.status(403).json({
-        ok: false,
-        error: data?.error || 'License verification failed'
-      });
+    if (!result.ok) {
+      res.status(403).json({ ok: false, error: result.error });
       return;
     }
 
     res.status(200).json({
       ok: true,
-      licenseKey: license.key || key,
-      instanceId: data?.instance?.id || meta?.instance_id || null,
+      licenseKey: result.license.license_key || key,
       meta: {
-        productId: meta.product_id || null,
-        variantId: meta.variant_id || null
+        productKey: result.license.product_link || null,
+        buyerEmail: result.license.buyer_email || null
       }
     });
   } catch (error) {

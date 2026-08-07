@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title></title>
-  <script src="https://assets.lemonsqueezy.com/lemon.js" defer></script>
   <style>
     :root {
       color-scheme: light;
@@ -668,7 +667,7 @@
         <li data-i18n="upgradeBenefitToday"></li>
         <li data-i18n="upgradeBenefitOverdue"></li>
       </ul>
-      <a id="upgradeButton" href="https://lewtewstory.lemonsqueezy.com/checkout/buy/b0131956-6576-4487-bad4-d05112994006?embed=1" class="upgrade-button lemonsqueezy-button" data-i18n="upgradeButton"></a>
+      <a id="upgradeButton" href="https://payhip.com/buy?link=4pF7G" class="upgrade-button" data-i18n="upgradeButton" target="_blank" rel="noopener"></a>
             <form class="license-form" id="licenseForm" autocomplete="off">
         <input id="licenseKeyInput" class="license-input" type="text" data-i18n-placeholder="licensePlaceholder" data-i18n-aria-label="licenseLabel">
         <button class="license-button" type="submit" data-i18n="licenseVerifyButton"></button>
@@ -912,29 +911,6 @@
       } catch {
         isProUnlocked = false;
         renderProState();
-      }
-    }
-    function setupLemonSqueezy() {
-      if (!window.LemonSqueezy) {
-        window.addEventListener("load", setupLemonSqueezy, { once: true });
-        return;
-      }
-
-      if (setupLemonSqueezy.ready) {
-        return;
-      }
-
-      setupLemonSqueezy.ready = true;
-      window.LemonSqueezy.Setup({
-        eventHandler(event) {
-          if (event.event === "Checkout.Success") {
-            alert(t("paymentSuccess"));
-          }
-        }
-      });
-
-      if (typeof window.createLemonSqueezy === "function") {
-        window.createLemonSqueezy();
       }
     }
 
@@ -1334,11 +1310,11 @@
     });
 
     renderI18n();
-    setupLemonSqueezy();
     updateAddButton();
     renderTodos();
     validateSavedLicense();
   </script>
 </body>
 </html>
+
 
