@@ -568,7 +568,7 @@
             <h2>样例套餐</h2>
             <span>后续可由后台维护</span>
           </div>
-          <div class="package-grid">
+          <div class="package-grid" id="packageGrid">
             <article class="package">
               <h3>轻奢婚纱照</h3>
               <p class="price">¥3999 起</p>
@@ -703,6 +703,27 @@
       }
     ];
 
+    const fallbackPackages = [
+      {
+        id: "wedding_lite",
+        name: "轻奢婚纱照",
+        price: "¥3999 起",
+        items: ["2 套服装造型", "80 张底片，20 张精修", "室内棚拍或城市外景"]
+      },
+      {
+        id: "family_story",
+        name: "亲子纪实照",
+        price: "¥899 起",
+        items: ["1-2 组家庭成员", "40 张底片，8 张精修", "适合生日、满月、日常记录"]
+      },
+      {
+        id: "dress_rental",
+        name: "婚纱礼服租赁",
+        price: "¥299 起/天",
+        items: ["主纱、敬酒服、伴娘服", "需提前预约试穿", "押金按款式单独确认"]
+      }
+    ];
+
     const fallbackAnswer = "这个问题我还不能确定，建议转人工顾问确认，避免给你错误信息。\n你可以在右侧填写预约意向，门店顾问会根据你的需求、预算和日期继续跟进。";
 
     const quickQuestions = [
@@ -717,8 +738,64 @@
     const chatForm = document.getElementById("chatForm");
     const chatInput = document.getElementById("chatInput");
     const quickReplies = document.getElementById("quickReplies");
+    const packageGrid = document.getElementById("packageGrid");
     const leadForm = document.getElementById("leadForm");
     const leadStatus = document.getElementById("leadStatus");
+
+    async function fetchJson(path) {
+      try {
+        const response = await fetch(path, { cache: "no-store" });
+
+        if (!response.ok) {
+          return null;
+        }
+
+        return await response.json();
+      } catch {
+        return null;
+      }
+    }
+
+    async function loadKnowledgeData() {
+      const [faqs, packages] = await Promise.all([
+        fetchJson("data/faq.json"),
+        fetchJson("data/packages.json")
+      ]);
+
+      if (Array.isArray(faqs) && faqs.length > 0) {
+        knowledgeBase.splice(0, knowledgeBase.length, ...faqs);
+      }
+
+      if (Array.isArray(packages) && packages.length > 0) {
+        renderPackages(packages);
+      }
+    }
+
+    function renderPackages(packages = fallbackPackages) {
+      packageGrid.innerHTML = "";
+
+      packages.forEach((item) => {
+        const card = document.createElement("article");
+        card.className = "package";
+
+        const title = document.createElement("h3");
+        title.textContent = item.name;
+
+        const price = document.createElement("p");
+        price.className = "price";
+        price.textContent = item.price;
+
+        const details = document.createElement("ul");
+        (item.items || []).forEach((text) => {
+          const detail = document.createElement("li");
+          detail.textContent = text;
+          details.appendChild(detail);
+        });
+
+        card.append(title, price, details);
+        packageGrid.appendChild(card);
+      });
+    }
 
     function addMessage(text, sender = "bot") {
       const message = document.createElement("div");
@@ -783,6 +860,8 @@
       addMessage(`已整理预约线索：\n姓名：${name}\n联系方式：${contact}\n类型：${service}\n意向日期：${date}\n需求：${note}`, "bot");
     });
 
+    renderPackages();
+    loadKnowledgeData();
     addMessage("你好，我是映白摄影智能客服。你可以咨询婚纱照、亲子照、旅拍、婚纱租赁、出片时间和预约规则。");
   </script>
 </body>
