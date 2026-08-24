@@ -1,4 +1,4 @@
-const API_BASE_URL = ""
+const API_BASE_URL = "https://my-todo-nm067hz9v-ltthahahas-projects.vercel.app"
 
 function request(path, options = {}) {
   if (!API_BASE_URL) {
@@ -29,14 +29,14 @@ function request(path, options = {}) {
 
 module.exports = {
   chat: function (payload) {
-    return request("/api/chat", {
+    return request("/api/photo-studio/chat", {
       method: "POST",
       data: payload
     })
   },
 
   submitLead: function (payload) {
-    return request("/api/leads", {
+    return request("/api/photo-studio/leads", {
       method: "POST",
       data: payload
     })

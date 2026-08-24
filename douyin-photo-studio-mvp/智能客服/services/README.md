@@ -11,8 +11,8 @@ const API_BASE_URL = "https://你的后端域名"
 后端需要提供：
 
 ```text
-POST /api/chat
-POST /api/leads
+POST /api/photo-studio/chat
+POST /api/photo-studio/leads
 ```
 
 当前项目根目录已经提供可联调的 Vercel API：
@@ -22,8 +22,8 @@ api/photo-studio/chat.js
 api/photo-studio/leads.js
 ```
 
-`/api/chat` 当前使用 `data/faq.json` 做稳定的知识库匹配，暂未接入大模型。
-`/api/leads` 会校验线索，并在配置 `FEISHU_BOT_WEBHOOK` 后推送到飞书群机器人。
+`/api/photo-studio/chat` 当前使用 `data/faq.json` 做稳定的知识库匹配，暂未接入大模型。
+`/api/photo-studio/leads` 会校验线索，并在配置 `FEISHU_BOT_WEBHOOK` 后推送到飞书群机器人。
 
 客服请求示例：
 
