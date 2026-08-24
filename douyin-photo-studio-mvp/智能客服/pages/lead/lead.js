@@ -61,10 +61,13 @@ Page({
     api.submitLead(payload).then(() => {
       tt.hideLoading()
       this.setData({ submitted: true })
-    }).catch(() => {
+    }).catch((error) => {
       tt.hideLoading()
+      console.error("submit lead failed", error)
       tt.showToast({
-        title: "提交失败，请稍后再试",
+        title: error && error.statusCode
+          ? `提交失败（${error.statusCode}）`
+          : "网络请求失败",
         icon: "none"
       })
     })

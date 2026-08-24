@@ -20,9 +20,16 @@ function request(path, options = {}) {
           return
         }
 
-        reject(new Error(`API request failed: ${response.statusCode}`))
+        const error = new Error(`API request failed: ${response.statusCode}`)
+        error.statusCode = response.statusCode
+        error.responseData = response.data
+        console.error("API request failed", path, response.statusCode, response.data)
+        reject(error)
       },
-      fail: reject
+      fail: (error) => {
+        console.error("API network request failed", path, error)
+        reject(error)
+      }
     })
   })
 }
