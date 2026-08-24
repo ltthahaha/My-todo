@@ -1,0 +1,122 @@
+.page {
+  min-height: 100vh;
+  padding: 24px 20px 40px;
+}
+
+.hero {
+  padding: 28px 22px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #eaf3ff, #f8fbff);
+}
+
+.eyebrow,
+.section-note {
+  color: #5d88bd;
+  font-size: 12px;
+}
+
+.title {
+  margin-top: 14px;
+  color: #172334;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.subtitle {
+  margin-top: 12px;
+  color: #667384;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.primary-button {
+  margin: 22px 0 0;
+  background: #5f9df7;
+  color: #fff;
+  font-size: 15px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 28px 2px 12px;
+}
+
+.section-heading {
+  color: #20262e;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.service-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.service-card {
+  display: flex;
+  align-items: center;
+  padding: 15px;
+  border: 1px solid #e4e9ef;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.service-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: #edf5ff;
+  color: #4d8fe8;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.service-copy {
+  flex: 1;
+  margin-left: 12px;
+}
+
+.service-title {
+  color: #20262e;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.service-description {
+  margin-top: 4px;
+  color: #7b8794;
+  font-size: 12px;
+}
+
+.arrow {
+  margin-left: 8px;
+  color: #9aa7b5;
+  font-size: 24px;
+}
+
+.trust-note {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.trust-title {
+  color: #3d8d61;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.trust-text {
+  margin-top: 5px;
+  color: #7b8794;
+  font-size: 12px;
+  line-height: 1.55;
+}

@@ -1,0 +1,25 @@
+<view class="page">
+  <view class="chat-card">
+    <scroll-view class="message-list" scroll-y="true" scroll-into-view="bottom-anchor">
+      <block tt:for="{{messages}}" tt:key="index">
+        <view class="message {{item.role}}">
+          <view class="bubble">{{item.text}}</view>
+        </view>
+      </block>
+      <view id="bottom-anchor"></view>
+    </scroll-view>
+
+    <view class="quick-list">
+      <block tt:for="{{quickQuestions}}" tt:key="*this">
+        <button class="quick-button" data-question="{{item}}" bindtap="askQuick">{{item}}</button>
+      </block>
+    </view>
+
+    <view class="input-row">
+      <input class="input" value="{{inputValue}}" bindinput="onInput" placeholder="输入你的问题" confirm-type="send" bindconfirm="sendMessage" />
+      <button class="send-button" bindtap="sendMessage">发送</button>
+    </view>
+  </view>
+
+  <button class="lead-button" bindtap="openLead">留下预约意向，转人工顾问</button>
+</view>
