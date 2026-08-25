@@ -18,13 +18,8 @@ let cloudbaseDb = null;
 app.use(express.json({ limit: "256kb" }));
 
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-Admin-Token"
-  );
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
-
+  // CORS is configured on the CloudBase HTTP gateway. Avoid adding a second
+  // wildcard origin here, which would produce an invalid duplicate header.
   if (req.method === "OPTIONS") {
     res.status(204).end();
     return;

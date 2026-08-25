@@ -75,6 +75,18 @@ HTTP 云函数需要显式配置服务端鉴权。推荐在 CloudBase 的 API Ke
 
 如果 `databaseConfigured` 或 `authConfigured` 为 `false`，先修正环境变量，再测试线索和聊天接口。
 
+### 跨域配置
+
+浏览器管理后台的跨域设置在 CloudBase 的 HTTP 网关中完成。请将静态托管域名加入允许来源，并允许：
+
+```text
+允许来源：https://你的静态托管域名
+允许请求头：X-Admin-Token, Content-Type
+允许方法：GET, PATCH, OPTIONS
+```
+
+本项目 API 不再额外返回 `Access-Control-Allow-Origin: *`，避免与 HTTP 网关的具体域名配置合并成无效的重复响应头。
+
 ### 线索管理接口
 
 线索管理接口需要在请求头中携带：
