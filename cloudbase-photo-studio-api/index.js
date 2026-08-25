@@ -239,7 +239,7 @@ async function getCollectionData(collectionName, studioId, fallback) {
       .limit(100)
       .get();
 
-    if (!Array.isArray(result.data) || result.data.length === 0) {
+    if (!Array.isArray(result.data)) {
       return fallback;
     }
 
@@ -268,6 +268,55 @@ function findFaq(message, faqs) {
       normalized.includes(String(keyword).toLowerCase())
     )
   );
+}
+
+function findPackage(message, packages) {
+  const normalized = message.toLowerCase();
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (const item of packages) {
+    const terms = [
+      item.name,
+      item.category,
+      ...(Array.isArray(item.items) ? item.items : [])
+    ]
+      .map((term) => asString(term).toLowerCase())
+      .filter((term) => term.length >= 2);
+
+    const score = terms.reduce((total, term) => {
+      return total + (normalized.includes(term) ? (term === item.name.toLowerCase() ? 4 : 2) : 0);
+    }, 0);
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = item;
+    }
+  }
+
+  return bestMatch;
+}
+
+function buildPackageReply(item) {
+  const items = item.items.length
+    ? `包含：${item.items.join("、")}。`
+    : "";
+  const description = item.description
+    ? `${item.description}。`
+    : "";
+
+  return `${item.name}，价格${item.price}。${items}${description}如果你想预约，可以留下联系方式和意向日期，我们会尽快联系你。`;
+}
+
+function buildPackageListReply(packages) {
+  const summary = packages
+    .filter((item) => item.name && item.price)
+    .map((item) => `${item.name}（${item.price}）`)
+    .join("、");
+
+  return summary
+    ? `目前可咨询的套餐有：${summary}。告诉我你想了解的拍摄类型，我可以继续介绍套餐内容。`
+    : "目前还没有可展示的套餐，门店顾问可以为你提供详细方案。";
 }
 
 async function saveChatMessage(record) {
@@ -823,11 +872,24 @@ app.post("/api/photo-studio/chat", async (req, res) => {
 
   try {
     const faqs = await getFaqs(studioId);
+    const packages = await getPackages(studioId);
     const matchedFaq = findFaq(message, faqs);
-    const reply = matchedFaq
-      ? matchedFaq.answer
-      : "这个问题目前需要门店顾问确认。你可以留下联系方式和意向日期，我们会尽快联系你。";
-    const needHuman = !matchedFaq;
+    const matchedPackage = findPackage(message, packages);
+    const packageIntent = /套餐|价格|多少钱|预算|包含|内容|费用/.test(message);
+    const listPackageIntent = /有哪些|什么套餐|套餐列表|套餐介绍/.test(message);
+    const specificPackageMention = matchedPackage && (
+      packageIntent ||
+      message.toLowerCase().includes(matchedPackage.name.toLowerCase())
+    );
+    const usePackageReply = Boolean(matchedPackage && specificPackageMention);
+    const reply = usePackageReply
+      ? buildPackageReply(matchedPackage)
+      : listPackageIntent || (packageIntent && packages.length && !matchedFaq)
+        ? buildPackageListReply(packages)
+        : matchedFaq
+          ? matchedFaq.answer
+          : "这个问题目前需要门店顾问确认。你可以留下联系方式和意向日期，我们会尽快联系你。";
+    const needHuman = !matchedFaq && !usePackageReply && !packageIntent;
     const leadIntent = /预约|档期|价格|多少钱|租|定金|联系|咨询|拍摄/.test(message);
 
     const chatLog = await saveChatMessage({
@@ -836,6 +898,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       userMessage: message,
       reply,
       matchedFaqId: matchedFaq ? matchedFaq.id : null,
+      matchedPackageId: usePackageReply ? matchedPackage.id : null,
       needHuman,
       source: "douyin-miniapp",
       createdAt: new Date()
@@ -845,6 +908,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       ok: true,
       reply,
       matchedFaqId: matchedFaq ? matchedFaq.id : null,
+      matchedPackageId: usePackageReply ? matchedPackage.id : null,
       needHuman,
       leadIntent,
       sessionId: sessionId || null,
