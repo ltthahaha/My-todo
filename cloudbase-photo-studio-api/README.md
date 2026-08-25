@@ -11,6 +11,9 @@ POST /api/photo-studio/chat
 POST /api/photo-studio/leads
 GET  /api/photo-studio/admin/leads
 PATCH /api/photo-studio/admin/leads/:leadId
+GET  /api/photo-studio/admin/stats
+GET  /api/photo-studio/admin/unanswered
+PATCH /api/photo-studio/admin/unanswered/:questionId
 GET  /api/photo-studio/admin/knowledge
 POST /api/photo-studio/admin/knowledge/faqs
 PATCH /api/photo-studio/admin/knowledge/faqs/:faqId
@@ -58,6 +61,7 @@ CLOUDBASE_FAQ_COLLECTION=faqs
 CLOUDBASE_PACKAGE_COLLECTION=packages
 CLOUDBASE_LEAD_COLLECTION=leads
 CLOUDBASE_CHAT_COLLECTION=chat_messages
+CLOUDBASE_UNANSWERED_COLLECTION=unanswered_questions
 FEISHU_BOT_WEBHOOK=你的飞书群机器人 Webhook
 ADMIN_API_TOKEN=线索管理后台访问令牌
 ```
@@ -162,6 +166,66 @@ FAQ 必填字段：
 
 知识库不提供删除接口，使用 `enabled: false` 停用内容，避免误删历史配置。
 
+### 运营统计接口
+
+统计接口需要携带 `X-Admin-Token`：
+
+```text
+GET /api/photo-studio/admin/stats?studioId=demo-studio
+```
+
+返回字段包括：
+
+```text
+totalChats              咨询次数
+totalLeads              线索总数
+newLeads                新线索
+contactedLeads          已联系线索
+bookedLeads             已预约线索
+completedLeads          已完成线索
+humanRequiredChats      待人工处理的聊天数
+faqMatchedChats         FAQ 命中次数
+packageMatchedChats     单个套餐命中次数
+packageListChats        套餐列表命中次数
+totalUnanswered         未匹配问题总数
+openUnanswered          待处理未匹配问题数
+conversionRate          已预约线索 / 总线索的百分比
+```
+
+### 未匹配问题接口
+
+当聊天没有命中 FAQ 或套餐时，接口会把问题写入 `unanswered_questions` 集合。相同 `studioId + questionKey + open` 的问题会自动合并并累加 `count`。
+
+查询未匹配问题：
+
+```text
+GET /api/photo-studio/admin/unanswered?studioId=demo-studio&status=open
+```
+
+`status` 可选值：
+
+```text
+open
+reviewed
+resolved
+ignored
+all
+```
+
+更新处理状态或内部备注：
+
+```text
+PATCH /api/photo-studio/admin/unanswered/{_id}
+Content-Type: application/json
+
+{
+  "status": "resolved",
+  "staffNote": "已补充到 FAQ"
+}
+```
+
+这些问题用于反向完善知识库：高频问题应优先补充到 FAQ 或套餐，补充后再标记为 `resolved`。
+
 ## 数据库集合
 
 创建以下集合：
@@ -171,6 +235,7 @@ faqs
 packages
 leads
 chat_messages
+unanswered_questions
 ```
 
 FAQ 和套餐数据可以先使用项目中的 `data/faq.json`、`data/packages.json` 作为回退数据。正式使用时，在每条 FAQ 和套餐记录中添加：
@@ -181,6 +246,8 @@ enabled: true
 ```
 
 线索会写入 `leads` 集合，聊天记录会写入 `chat_messages` 集合。所有正式查询都应带 `studioId`，为后续多租户 SaaS 做数据隔离准备。
+
+未匹配问题会写入 `unanswered_questions` 集合，建议和其他业务集合一样设置为 `无权限 [ADMINONLY]`，只允许服务端 API 读写，避免小程序或浏览器直接操作数据库。
 
 当 CloudBase 已配置但集合为空时，API 会返回空知识库；只有未配置数据库或读取失败时才使用本地 JSON 回退数据。这样停用全部 FAQ 或套餐后不会重新出现示例内容。
 

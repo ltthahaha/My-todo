@@ -203,6 +203,78 @@
       margin-top: 10px;
     }
     .knowledge-empty { padding: 24px 8px; text-align: center; color: var(--muted); }
+    .analytics-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .analytics-toolbar h2 { font-size: 18px; }
+    .analytics-actions { display: flex; align-items: center; gap: 8px; }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .stat-card {
+      min-width: 0;
+      padding: 16px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .stat-label { color: var(--muted); font-size: 12px; }
+    .stat-value { margin-top: 5px; font-size: 26px; font-weight: 700; line-height: 1.2; }
+    .analytics-panel {
+      margin-top: 16px;
+      padding: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .analytics-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .analytics-panel-header h2 { font-size: 18px; }
+    .question-list { display: grid; gap: 12px; margin-top: 14px; }
+    .question-item {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfd;
+    }
+    .question-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .question-text { font-weight: 700; word-break: break-word; }
+    .question-meta { margin-top: 5px; color: var(--muted); font-size: 12px; }
+    .question-controls {
+      display: grid;
+      grid-template-columns: minmax(120px, 180px) minmax(180px, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      margin-top: 12px;
+    }
+    .question-controls textarea {
+      width: 100%;
+      min-height: 38px;
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      resize: vertical;
+      font: inherit;
+    }
     @media (max-width: 720px) {
       main { width: min(100% - 20px, 1180px); margin: 16px auto; }
       header, .toolbar { display: block; }
@@ -211,6 +283,10 @@
       .knowledge-grid { grid-template-columns: 1fr; }
       .knowledge-toolbar { display: block; }
       .knowledge-actions { margin-top: 10px; }
+      .analytics-toolbar, .analytics-panel-header { display: block; }
+      .analytics-actions { margin-top: 10px; }
+      .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .question-controls { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -230,6 +306,7 @@
     <nav class="tabs" aria-label="管理模块">
       <button class="tab-button active" type="button" data-view="leadsView">线索管理</button>
       <button class="tab-button" type="button" data-view="knowledgeView">知识库管理</button>
+      <button class="tab-button" type="button" data-view="analyticsView">运营分析</button>
     </nav>
 
     <section id="leadsView" class="view">
@@ -313,6 +390,52 @@
         </article>
       </div>
     </section>
+
+    <section id="analyticsView" class="view hidden">
+      <div class="analytics-toolbar">
+        <div>
+          <h2>运营分析</h2>
+          <p class="subtitle">跟踪客服命中情况、线索转化和待补充的知识库问题。</p>
+        </div>
+        <div class="analytics-actions">
+          <button id="refreshAnalyticsButton" type="button">刷新数据</button>
+        </div>
+      </div>
+
+      <div class="stats-grid" id="statsGrid">
+        <article class="stat-card"><div class="stat-label">咨询次数</div><div class="stat-value" data-stat="totalChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">线索总数</div><div class="stat-value" data-stat="totalLeads">-</div></article>
+        <article class="stat-card"><div class="stat-label">新线索</div><div class="stat-value" data-stat="newLeads">-</div></article>
+        <article class="stat-card"><div class="stat-label">已联系</div><div class="stat-value" data-stat="contactedLeads">-</div></article>
+        <article class="stat-card"><div class="stat-label">已预约</div><div class="stat-value" data-stat="bookedLeads">-</div></article>
+        <article class="stat-card"><div class="stat-label">转化率</div><div class="stat-value" data-stat="conversionRate">-</div></article>
+        <article class="stat-card"><div class="stat-label">FAQ 命中</div><div class="stat-value" data-stat="faqMatchedChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">套餐命中</div><div class="stat-value" data-stat="packageMatchedChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">待人工问题</div><div class="stat-value" data-stat="humanRequiredChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">未匹配问题</div><div class="stat-value" data-stat="openUnanswered">-</div></article>
+      </div>
+
+      <section class="analytics-panel">
+        <div class="analytics-panel-header">
+          <div>
+            <h2>未匹配问题</h2>
+            <p class="subtitle">将高频问题补充到 FAQ 或套餐后，可标记为已解决。</p>
+          </div>
+          <div class="filters">
+            <label for="unansweredStatusFilter">状态</label>
+            <select id="unansweredStatusFilter">
+              <option value="open">待处理</option>
+              <option value="reviewed">已查看</option>
+              <option value="resolved">已解决</option>
+              <option value="ignored">已忽略</option>
+              <option value="all">全部</option>
+            </select>
+          </div>
+        </div>
+        <div id="unansweredEmpty" class="knowledge-empty">输入管理令牌后连接。</div>
+        <div id="unansweredList" class="question-list"></div>
+      </section>
+    </section>
   </main>
   <div class="toast hidden" id="toast"></div>
 
@@ -326,14 +449,23 @@
       completed: "已完成",
       invalid: "无效"
     };
+    const unansweredStatusLabels = {
+      open: "待处理",
+      reviewed: "已查看",
+      resolved: "已解决",
+      ignored: "已忽略"
+    };
     let apiToken = sessionStorage.getItem("photoStudioAdminToken") || "";
     let leads = [];
     let faqs = [];
     let packages = [];
+    let analyticsStats = null;
+    let unansweredQuestions = [];
 
     const $ = (selector) => document.querySelector(selector);
     const tokenInput = $("#apiToken");
     const statusFilter = $("#statusFilter");
+    const unansweredStatusFilter = $("#unansweredStatusFilter");
     tokenInput.value = apiToken;
 
     function showToast(message) {
@@ -573,6 +705,110 @@
       }
     }
 
+    function renderStats() {
+      const stats = analyticsStats || {};
+      document.querySelectorAll("[data-stat]").forEach((node) => {
+        const key = node.dataset.stat;
+        const value = stats[key];
+        node.textContent = key === "conversionRate" && typeof value === "number"
+          ? `${value}%`
+          : typeof value === "number" ? String(value) : "-";
+      });
+    }
+
+    function renderUnansweredQuestions() {
+      const list = $("#unansweredList");
+      const empty = $("#unansweredEmpty");
+      list.innerHTML = "";
+
+      if (!unansweredQuestions.length) {
+        empty.classList.remove("hidden");
+        empty.textContent = "当前筛选条件下没有未匹配问题。";
+        return;
+      }
+
+      empty.classList.add("hidden");
+      list.innerHTML = unansweredQuestions.map((question) => {
+        const id = question._id || question.id;
+        const status = unansweredStatusLabels[question.status] ? question.status : "open";
+        return `
+          <article class="question-item" data-question-id="${escapeHtml(id)}">
+            <div class="question-header">
+              <div>
+                <div class="question-text">${escapeHtml(question.question || "未记录问题")}</div>
+                <div class="question-meta">出现 ${Number(question.count || 1)} 次 · 最近提问：${escapeHtml(formatDate(question.lastAskedAt || question.createdAt))}</div>
+              </div>
+              <span class="status status-${status === "open" ? "new" : status === "reviewed" ? "contacted" : status === "resolved" ? "booked" : "invalid"}">${unansweredStatusLabels[status]}</span>
+            </div>
+            <div class="question-controls">
+              <select class="unanswered-status" aria-label="问题处理状态">
+                ${Object.entries(unansweredStatusLabels).map(([key, label]) => `<option value="${key}" ${key === status ? "selected" : ""}>${label}</option>`).join("")}
+              </select>
+              <textarea class="unanswered-note" placeholder="内部备注，例如：已补充到 FAQ">${escapeHtml(question.staffNote || "")}</textarea>
+              <button class="save-unanswered primary" type="button">保存</button>
+            </div>
+          </article>
+        `;
+      }).join("");
+
+      list.querySelectorAll(".save-unanswered").forEach((button) => {
+        button.addEventListener("click", () => updateUnansweredQuestion(button.closest("[data-question-id]")));
+      });
+    }
+
+    async function loadAnalytics() {
+      if (!apiToken) return;
+
+      $("#refreshAnalyticsButton").disabled = true;
+      try {
+        const statsQuery = new URLSearchParams({ studioId: STUDIO_ID });
+        const questionQuery = new URLSearchParams({
+          studioId: STUDIO_ID,
+          status: unansweredStatusFilter.value
+        });
+        const [statsData, questionsData] = await Promise.all([
+          request(`/api/photo-studio/admin/stats?${statsQuery}`),
+          request(`/api/photo-studio/admin/unanswered?${questionQuery}`)
+        ]);
+        analyticsStats = statsData.stats || null;
+        unansweredQuestions = Array.isArray(questionsData.questions) ? questionsData.questions : [];
+        renderStats();
+        renderUnansweredQuestions();
+      } catch (error) {
+        analyticsStats = null;
+        unansweredQuestions = [];
+        renderStats();
+        $("#unansweredList").innerHTML = "";
+        $("#unansweredEmpty").textContent = error instanceof TypeError
+          ? "浏览器无法访问接口，请检查 CloudBase 跨域设置。"
+          : error.message;
+        $("#unansweredEmpty").classList.remove("hidden");
+      } finally {
+        $("#refreshAnalyticsButton").disabled = false;
+      }
+    }
+
+    async function updateUnansweredQuestion(row) {
+      const id = row.dataset.questionId;
+      const button = row.querySelector(".save-unanswered");
+      button.disabled = true;
+      try {
+        await request(`/api/photo-studio/admin/unanswered/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: row.querySelector(".unanswered-status").value,
+            staffNote: row.querySelector(".unanswered-note").value
+          })
+        });
+        showToast("问题状态已更新");
+        await loadAnalytics();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     function setFormVisible(formId, visible) {
       $(formId).classList.toggle("hidden", !visible);
     }
@@ -714,6 +950,7 @@
       sessionStorage.setItem("photoStudioAdminToken", apiToken);
       loadLeads();
       loadKnowledge();
+      loadAnalytics();
     });
     $("#refreshButton").addEventListener("click", loadLeads);
     statusFilter.addEventListener("change", loadLeads);
@@ -724,6 +961,7 @@
         button.classList.add("active");
         $(`#${button.dataset.view}`).classList.remove("hidden");
         if (button.dataset.view === "knowledgeView") loadKnowledge();
+        if (button.dataset.view === "analyticsView") loadAnalytics();
       });
     });
     $("#addFaqButton").addEventListener("click", () => setFormVisible("#faqForm", true));
@@ -733,9 +971,12 @@
     $("#cancelPackageButton").addEventListener("click", () => setFormVisible("#packageForm", false));
     $("#packageForm").addEventListener("submit", createPackage);
     $("#refreshKnowledgeButton").addEventListener("click", loadKnowledge);
+    $("#refreshAnalyticsButton").addEventListener("click", loadAnalytics);
+    unansweredStatusFilter.addEventListener("change", loadAnalytics);
     if (apiToken) {
       loadLeads();
       loadKnowledge();
+      loadAnalytics();
     }
   </script>
 </body>

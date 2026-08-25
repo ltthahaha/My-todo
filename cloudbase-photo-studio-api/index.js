@@ -11,6 +11,7 @@ const faqCollection = process.env.CLOUDBASE_FAQ_COLLECTION || "faqs";
 const packageCollection = process.env.CLOUDBASE_PACKAGE_COLLECTION || "packages";
 const leadCollection = process.env.CLOUDBASE_LEAD_COLLECTION || "leads";
 const chatCollection = process.env.CLOUDBASE_CHAT_COLLECTION || "chat_messages";
+const unansweredCollection = process.env.CLOUDBASE_UNANSWERED_COLLECTION || "unanswered_questions";
 const adminApiToken = asString(process.env.ADMIN_API_TOKEN);
 
 let cloudbaseDb = null;
@@ -338,6 +339,75 @@ async function saveChatMessage(record) {
   }
 }
 
+function normalizeQuestion(value) {
+  return asString(value)
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function saveUnansweredQuestion(record) {
+  const db = getDatabase();
+
+  if (!db) {
+    return { stored: false, reason: "CLOUDBASE_ENV_ID is not configured" };
+  }
+
+  try {
+    const existing = await db.collection(unansweredCollection)
+      .where({
+        studioId: record.studioId,
+        questionKey: record.questionKey,
+        status: "open"
+      })
+      .limit(1)
+      .get();
+    const previous = Array.isArray(existing.data) ? existing.data[0] : null;
+
+    if (previous && previous._id) {
+      const update = {
+        count: Number(previous.count || 1) + 1,
+        lastAskedAt: record.lastAskedAt,
+        lastSessionId: record.lastSessionId,
+        updatedAt: record.updatedAt
+      };
+      await db.collection(unansweredCollection).doc(previous._id).update(update);
+      return { stored: true, id: previous._id, deduplicated: true };
+    }
+
+    const result = await db.collection(unansweredCollection).add(record);
+    return {
+      stored: true,
+      id: result.id || result._id || null,
+      deduplicated: false
+    };
+  } catch (error) {
+    console.error("CloudBase unanswered question write failed", error);
+    return {
+      stored: false,
+      reason: error.message || "unanswered question write failed"
+    };
+  }
+}
+
+async function countDocuments(collectionName, filter) {
+  const db = getDatabase();
+
+  if (!db) {
+    return 0;
+  }
+
+  try {
+    const result = await db.collection(collectionName)
+      .where(filter)
+      .count();
+    return Number(result.total || 0);
+  } catch (error) {
+    console.error("CloudBase count failed", collectionName, filter, error);
+    return 0;
+  }
+}
+
 function buildLeadText(lead) {
   return [
     "新摄影店预约线索",
@@ -433,7 +503,8 @@ app.get("/health", (req, res) => {
         faqs: faqCollection,
         packages: packageCollection,
         leads: leadCollection,
-        chatMessages: chatCollection
+        chatMessages: chatCollection,
+        unansweredQuestions: unansweredCollection
       }
     },
     timestamp: new Date().toISOString()
@@ -566,6 +637,181 @@ app.patch("/api/photo-studio/admin/leads/:leadId", requireAdmin, async (req, res
     res.status(500).json({
       ok: false,
       error: error.message || "Lead update failed"
+    });
+  }
+});
+
+app.get("/api/photo-studio/admin/stats", requireAdmin, async (req, res) => {
+  const studioId = asString(req.query.studioId) || defaultStudioId;
+  const db = getDatabase();
+
+  if (!db) {
+    res.status(503).json({
+      ok: false,
+      error: "CloudBase database is not configured"
+    });
+    return;
+  }
+
+  try {
+    const [
+      totalChats,
+      totalLeads,
+      newLeads,
+      contactedLeads,
+      bookedLeads,
+      completedLeads,
+      humanRequiredChats,
+      faqMatchedChats,
+      packageMatchedChats,
+      packageListChats,
+      totalUnanswered,
+      openUnanswered
+    ] = await Promise.all([
+      countDocuments(chatCollection, { studioId }),
+      countDocuments(leadCollection, { studioId }),
+      countDocuments(leadCollection, { studioId, status: "new" }),
+      countDocuments(leadCollection, { studioId, status: "contacted" }),
+      countDocuments(leadCollection, { studioId, status: "booked" }),
+      countDocuments(leadCollection, { studioId, status: "completed" }),
+      countDocuments(chatCollection, { studioId, needHuman: true }),
+      countDocuments(chatCollection, { studioId, matchType: "faq" }),
+      countDocuments(chatCollection, { studioId, matchType: "package" }),
+      countDocuments(chatCollection, { studioId, matchType: "package_list" }),
+      countDocuments(unansweredCollection, { studioId }),
+      countDocuments(unansweredCollection, { studioId, status: "open" })
+    ]);
+
+    const conversionRate = totalLeads
+      ? Math.round((bookedLeads / totalLeads) * 100)
+      : 0;
+
+    res.json({
+      ok: true,
+      studioId,
+      stats: {
+        totalChats,
+        totalLeads,
+        newLeads,
+        contactedLeads,
+        bookedLeads,
+        completedLeads,
+        humanRequiredChats,
+        faqMatchedChats,
+        packageMatchedChats,
+        packageListChats,
+        totalUnanswered,
+        openUnanswered,
+        conversionRate
+      }
+    });
+  } catch (error) {
+    console.error("Admin stats failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Stats failed"
+    });
+  }
+});
+
+app.get("/api/photo-studio/admin/unanswered", requireAdmin, async (req, res) => {
+  const studioId = asString(req.query.studioId) || defaultStudioId;
+  const status = asString(req.query.status) || "open";
+  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
+  const db = getDatabase();
+  const allowedStatuses = new Set(["all", "open", "reviewed", "resolved", "ignored"]);
+
+  if (!allowedStatuses.has(status)) {
+    res.status(400).json({
+      ok: false,
+      error: "Invalid unanswered status"
+    });
+    return;
+  }
+
+  if (!db) {
+    res.status(503).json({
+      ok: false,
+      error: "CloudBase database is not configured"
+    });
+    return;
+  }
+
+  try {
+    const filter = { studioId };
+
+    if (status !== "all") {
+      filter.status = status;
+    }
+
+    const result = await db.collection(unansweredCollection)
+      .where(filter)
+      .orderBy("lastAskedAt", "desc")
+      .limit(limit)
+      .get();
+
+    res.json({
+      ok: true,
+      studioId,
+      questions: Array.isArray(result.data) ? result.data : []
+    });
+  } catch (error) {
+    console.error("Admin unanswered list failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Unanswered list failed"
+    });
+  }
+});
+
+app.patch("/api/photo-studio/admin/unanswered/:questionId", requireAdmin, async (req, res) => {
+  const questionId = asString(req.params.questionId);
+  const status = asString(req.body.status);
+  const staffNote = asString(req.body.staffNote);
+  const allowedStatuses = new Set(["open", "reviewed", "resolved", "ignored"]);
+  const db = getDatabase();
+
+  if (!questionId) {
+    res.status(400).json({
+      ok: false,
+      error: "Missing unanswered question ID"
+    });
+    return;
+  }
+
+  if (!allowedStatuses.has(status)) {
+    res.status(400).json({
+      ok: false,
+      error: "Invalid unanswered status"
+    });
+    return;
+  }
+
+  if (!db) {
+    res.status(503).json({
+      ok: false,
+      error: "CloudBase database is not configured"
+    });
+    return;
+  }
+
+  try {
+    const update = {
+      status,
+      staffNote,
+      updatedAt: new Date()
+    };
+    await db.collection(unansweredCollection).doc(questionId).update(update);
+    res.json({
+      ok: true,
+      questionId,
+      update
+    });
+  } catch (error) {
+    console.error("Admin unanswered update failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Unanswered update failed"
     });
   }
 });
@@ -882,14 +1128,25 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       message.toLowerCase().includes(matchedPackage.name.toLowerCase())
     );
     const usePackageReply = Boolean(matchedPackage && specificPackageMention);
+    const usePackageListReply = Boolean(
+      !usePackageReply &&
+      (listPackageIntent || (packageIntent && packages.length && !matchedFaq))
+    );
+    const matchType = usePackageReply
+      ? "package"
+      : usePackageListReply
+        ? "package_list"
+        : matchedFaq
+          ? "faq"
+          : "none";
     const reply = usePackageReply
       ? buildPackageReply(matchedPackage)
-      : listPackageIntent || (packageIntent && packages.length && !matchedFaq)
+      : usePackageListReply
         ? buildPackageListReply(packages)
         : matchedFaq
           ? matchedFaq.answer
           : "这个问题目前需要门店顾问确认。你可以留下联系方式和意向日期，我们会尽快联系你。";
-    const needHuman = !matchedFaq && !usePackageReply && !packageIntent;
+    const needHuman = matchType === "none";
     const leadIntent = /预约|档期|价格|多少钱|租|定金|联系|咨询|拍摄/.test(message);
 
     const chatLog = await saveChatMessage({
@@ -899,20 +1156,44 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       reply,
       matchedFaqId: matchedFaq ? matchedFaq.id : null,
       matchedPackageId: usePackageReply ? matchedPackage.id : null,
+      matchType,
       needHuman,
       source: "douyin-miniapp",
       createdAt: new Date()
     });
+
+    let unanswered = null;
+
+    if (matchType === "none") {
+      const now = new Date();
+      unanswered = await saveUnansweredQuestion({
+        studioId,
+        question: message,
+        questionKey: normalizeQuestion(message),
+        sampleReply: reply,
+        status: "open",
+        count: 1,
+        firstAskedAt: now,
+        lastAskedAt: now,
+        lastSessionId: sessionId || null,
+        source: "douyin-miniapp",
+        staffNote: "",
+        createdAt: now,
+        updatedAt: now
+      });
+    }
 
     res.json({
       ok: true,
       reply,
       matchedFaqId: matchedFaq ? matchedFaq.id : null,
       matchedPackageId: usePackageReply ? matchedPackage.id : null,
+      matchType,
       needHuman,
       leadIntent,
       sessionId: sessionId || null,
-      chatLog
+      chatLog,
+      unanswered
     });
   } catch (error) {
     console.error("Chat API failed", error);
