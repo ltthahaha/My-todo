@@ -1,0 +1,1143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>摄影店线索管理</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f8;
+      --surface: #ffffff;
+      --text: #1f2933;
+      --muted: #6b7785;
+      --line: #e5e9ef;
+      --brand: #2f80ed;
+      --danger: #c0392b;
+      --shadow: 0 8px 24px rgba(31, 41, 51, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { width: min(1180px, calc(100% - 32px)); margin: 32px auto; }
+    header, .toolbar, .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 24px;
+      border-radius: 10px;
+    }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 24px; line-height: 1.2; }
+    .subtitle { color: var(--muted); margin-top: 6px; }
+    .auth { display: flex; gap: 8px; min-width: min(420px, 100%); }
+    input, select, button {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+    }
+    input, select { padding: 0 11px; width: 100%; }
+    button {
+      padding: 0 14px;
+      cursor: pointer;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    button.primary { background: var(--brand); border-color: var(--brand); color: white; }
+    button:hover { filter: brightness(0.97); }
+    button:disabled { cursor: wait; opacity: 0.6; }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 8px;
+    }
+    .filters { display: flex; gap: 8px; align-items: center; }
+    .count { color: var(--muted); }
+    .table-wrap { margin-top: 16px; overflow-x: auto; border-radius: 8px; }
+    table { width: 100%; min-width: 880px; border-collapse: collapse; }
+    th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; font-weight: 700; background: #fafbfc; }
+    tr:last-child td { border-bottom: 0; }
+    .lead-name { font-weight: 700; }
+    .lead-meta { color: var(--muted); margin-top: 4px; }
+    .status {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #eef2f6;
+      color: #52606d;
+      font-size: 12px;
+    }
+    .status-new { background: #e8f1ff; color: #1967d2; }
+    .status-contacted { background: #fff5db; color: #946200; }
+    .status-booked { background: #e8f7ef; color: #18794e; }
+    .status-completed { background: #e9edf1; color: #52606d; }
+    .status-invalid { background: #fdeceb; color: var(--danger); }
+    .empty, .error { padding: 48px 16px; text-align: center; color: var(--muted); }
+    .error { color: var(--danger); }
+    .row-actions { display: flex; gap: 8px; align-items: center; }
+    .row-actions select { min-width: 110px; }
+    .note-input { min-width: 180px; }
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      background: #1f2933;
+      color: #fff;
+      box-shadow: var(--shadow);
+    }
+    .hidden { display: none; }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-top: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .tab-button {
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 6px 6px 0 0;
+      background: transparent;
+      color: var(--muted);
+    }
+    .tab-button.active {
+      border-bottom-color: var(--brand);
+      color: var(--brand);
+    }
+    .view { margin-top: 16px; }
+    .knowledge-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .knowledge-actions { display: flex; gap: 8px; }
+    .knowledge-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .knowledge-panel {
+      min-width: 0;
+      padding: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .knowledge-panel h2 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 18px;
+    }
+    .knowledge-list { display: grid; gap: 12px; margin-top: 14px; }
+    .knowledge-item {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfd;
+    }
+    .knowledge-item.disabled { opacity: 0.65; }
+    .knowledge-item-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .knowledge-item-title { font-weight: 700; }
+    .knowledge-item-meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .knowledge-form {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+    .knowledge-form label { color: var(--muted); font-size: 12px; font-weight: 700; }
+    .knowledge-form textarea {
+      display: block;
+      width: 100%;
+      min-height: 86px;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      resize: vertical;
+      font: inherit;
+    }
+    .knowledge-form input, .knowledge-form textarea { margin-top: 4px; }
+    .knowledge-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .knowledge-item .field-label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    .knowledge-item textarea { min-height: 74px; }
+    .knowledge-item .item-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .knowledge-empty { padding: 24px 8px; text-align: center; color: var(--muted); }
+    .analytics-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .analytics-toolbar h2 { font-size: 18px; }
+    .analytics-actions { display: flex; align-items: center; gap: 8px; }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .stat-card {
+      min-width: 0;
+      padding: 16px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .stat-label { color: var(--muted); font-size: 12px; }
+    .stat-value { margin-top: 5px; font-size: 26px; font-weight: 700; line-height: 1.2; }
+    .analytics-panel {
+      margin-top: 16px;
+      padding: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .analytics-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .analytics-panel-header h2 { font-size: 18px; }
+    .question-list { display: grid; gap: 12px; margin-top: 14px; }
+    .question-item {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfd;
+    }
+    .question-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .question-text { font-weight: 700; word-break: break-word; }
+    .question-meta { margin-top: 5px; color: var(--muted); font-size: 12px; }
+    .question-controls {
+      display: grid;
+      grid-template-columns: minmax(120px, 180px) minmax(180px, 1fr) auto auto;
+      gap: 8px;
+      align-items: center;
+      margin-top: 12px;
+    }
+    .question-controls textarea {
+      width: 100%;
+      min-height: 38px;
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      resize: vertical;
+      font: inherit;
+    }
+    @media (max-width: 720px) {
+      main { width: min(100% - 20px, 1180px); margin: 16px auto; }
+      header, .toolbar { display: block; }
+      .auth { margin-top: 16px; min-width: 0; }
+      .filters { margin-bottom: 10px; }
+      .knowledge-grid { grid-template-columns: 1fr; }
+      .knowledge-toolbar { display: block; }
+      .knowledge-actions { margin-top: 10px; }
+      .analytics-toolbar, .analytics-panel-header { display: block; }
+      .analytics-actions { margin-top: 10px; }
+      .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .question-controls { grid-template-columns: 1fr; }
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(31, 41, 51, 0.42);
+      z-index: 10;
+    }
+    .modal-backdrop.hidden { display: none; }
+    .modal {
+      width: min(560px, 100%);
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+      padding: 20px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 20px 60px rgba(31, 41, 51, 0.2);
+    }
+    .modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .modal-header h2 { font-size: 18px; }
+    .modal-close {
+      min-width: 38px;
+      padding: 0;
+      font-size: 20px;
+      line-height: 1;
+    }
+    .modal-form {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .modal-form label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .modal-form input, .modal-form textarea { margin-top: 4px; }
+    .modal-form textarea {
+      display: block;
+      width: 100%;
+      min-height: 110px;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      resize: vertical;
+      font: inherit;
+    }
+    .modal-question {
+      padding: 10px 12px;
+      border-left: 3px solid var(--brand);
+      background: #f5f8fc;
+      color: var(--text);
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>摄影店线索管理</h1>
+        <p class="subtitle">查看预约意向，跟进客户状态和内部备注。</p>
+      </div>
+      <form class="auth" id="authForm">
+        <input id="apiToken" type="password" placeholder="输入 ADMIN_API_TOKEN" autocomplete="off" required>
+        <button class="primary" type="submit">连接</button>
+      </form>
+    </header>
+
+    <nav class="tabs" aria-label="管理模块">
+      <button class="tab-button active" type="button" data-view="leadsView">线索管理</button>
+      <button class="tab-button" type="button" data-view="knowledgeView">知识库管理</button>
+      <button class="tab-button" type="button" data-view="analyticsView">运营分析</button>
+    </nav>
+
+    <section id="leadsView" class="view">
+      <div class="toolbar">
+        <div class="filters">
+          <label for="statusFilter">状态</label>
+          <select id="statusFilter">
+            <option value="all">全部</option>
+            <option value="new">新线索</option>
+            <option value="contacted">已联系</option>
+            <option value="booked">已预约</option>
+            <option value="completed">已完成</option>
+            <option value="invalid">无效</option>
+          </select>
+          <button id="refreshButton" type="button">刷新</button>
+        </div>
+        <div class="count" id="count">尚未连接</div>
+      </div>
+
+      <section class="table-wrap">
+        <div class="empty" id="emptyState">输入管理令牌后连接。</div>
+        <div class="error hidden" id="errorState"></div>
+        <table class="hidden" id="leadTable">
+          <thead>
+            <tr>
+              <th>客户</th>
+              <th>拍摄需求</th>
+              <th>意向日期</th>
+              <th>预算 / 联系方式</th>
+              <th>状态与备注</th>
+              <th>创建时间</th>
+            </tr>
+          </thead>
+          <tbody id="leadBody"></tbody>
+        </table>
+      </section>
+    </section>
+
+    <section id="knowledgeView" class="view hidden">
+      <div class="knowledge-toolbar">
+        <div>
+          <h2>知识库管理</h2>
+          <p class="subtitle">维护客服 FAQ 和套餐信息，停用后不会被小程序客服使用。</p>
+        </div>
+        <div class="knowledge-actions">
+          <button id="addFaqButton" type="button">新增 FAQ</button>
+          <button id="addPackageButton" class="primary" type="button">新增套餐</button>
+          <button id="refreshKnowledgeButton" type="button">刷新</button>
+        </div>
+      </div>
+
+      <div class="knowledge-grid">
+        <article class="knowledge-panel">
+          <h2><span>FAQ</span><span class="count" id="faqCount">0 条</span></h2>
+          <form id="faqForm" class="knowledge-form hidden">
+            <label>分类<input id="faqCategory" required placeholder="例如：婚纱照"></label>
+            <label>关键词<input id="faqKeywords" required placeholder="用逗号分隔，例如：婚纱,婚照"></label>
+            <label>客服回复<textarea id="faqAnswer" required placeholder="输入客户看到的回复内容"></textarea></label>
+            <div class="knowledge-form-actions">
+              <button id="cancelFaqButton" type="button">取消</button>
+              <button class="primary" type="submit">创建 FAQ</button>
+            </div>
+          </form>
+          <div id="faqList" class="knowledge-list"></div>
+        </article>
+
+        <article class="knowledge-panel">
+          <h2><span>套餐</span><span class="count" id="packageCount">0 条</span></h2>
+          <form id="packageForm" class="knowledge-form hidden">
+            <label>套餐名称<input id="packageName" required placeholder="例如：轻奢婚纱照"></label>
+            <label>分类<input id="packageCategory" required placeholder="例如：婚纱照"></label>
+            <label>价格<input id="packagePrice" required placeholder="例如：¥3999 起"></label>
+            <label>包含内容<textarea id="packageItems" placeholder="每行一项"></textarea></label>
+            <label>套餐说明<textarea id="packageDescription" placeholder="输入套餐适用人群或补充说明"></textarea></label>
+            <div class="knowledge-form-actions">
+              <button id="cancelPackageButton" type="button">取消</button>
+              <button class="primary" type="submit">创建套餐</button>
+            </div>
+          </form>
+          <div id="packageList" class="knowledge-list"></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="analyticsView" class="view hidden">
+      <div class="analytics-toolbar">
+        <div>
+          <h2>运营分析</h2>
+          <p class="subtitle">跟踪客服命中情况、线索转化和待补充的知识库问题。</p>
+        </div>
+        <div class="analytics-actions">
+          <button id="refreshAnalyticsButton" type="button">刷新数据</button>
+        </div>
+      </div>
+
+      <div class="stats-grid" id="statsGrid">
+        <article class="stat-card"><div class="stat-label">咨询次数</div><div class="stat-value" data-stat="totalChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">线索总数</div><div class="stat-value" data-stat="totalLeads">-</div></article>
+        <article class="stat-card"><div class="stat-label">新线索</div><div class="stat-value" data-stat="newLeads">-</div></article>
+        <article class="stat-card"><div class="stat-label">已联系</div><div class="stat-value" data-stat="contactedLeads">-</div></article>
+        <article class="stat-card"><div class="stat-label">已预约</div><div class="stat-value" data-stat="bookedLeads">-</div></article>
+        <article class="stat-card"><div class="stat-label">转化率</div><div class="stat-value" data-stat="conversionRate">-</div></article>
+        <article class="stat-card"><div class="stat-label">FAQ 命中</div><div class="stat-value" data-stat="faqMatchedChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">套餐命中</div><div class="stat-value" data-stat="packageMatchedChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">待人工问题</div><div class="stat-value" data-stat="humanRequiredChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">未匹配问题</div><div class="stat-value" data-stat="openUnanswered">-</div></article>
+      </div>
+
+      <section class="analytics-panel">
+        <div class="analytics-panel-header">
+          <div>
+            <h2>未匹配问题</h2>
+            <p class="subtitle">将高频问题补充到 FAQ 或套餐后，可标记为已解决。</p>
+          </div>
+          <div class="filters">
+            <label for="unansweredStatusFilter">状态</label>
+            <select id="unansweredStatusFilter">
+              <option value="open">待处理</option>
+              <option value="reviewed">已查看</option>
+              <option value="resolved">已解决</option>
+              <option value="ignored">已忽略</option>
+              <option value="all">全部</option>
+            </select>
+          </div>
+        </div>
+        <div id="unansweredEmpty" class="knowledge-empty">输入管理令牌后连接。</div>
+        <div id="unansweredList" class="question-list"></div>
+      </section>
+    </section>
+  </main>
+  <div class="toast hidden" id="toast"></div>
+  <div class="modal-backdrop hidden" id="faqModal" aria-hidden="true">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="faqModalTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="faqModalTitle">将问题转为 FAQ</h2>
+          <p class="subtitle">保存后会自动将该问题标记为“已解决”。</p>
+        </div>
+        <button class="modal-close" id="closeFaqModalButton" type="button" aria-label="关闭">×</button>
+      </div>
+      <form id="unansweredFaqForm" class="modal-form">
+        <div class="modal-question" id="sourceQuestionText"></div>
+        <label>分类<input id="unansweredFaqCategory" required placeholder="例如：婚纱照"></label>
+        <label>关键词<input id="unansweredFaqKeywords" required placeholder="用逗号分隔，例如：婚纱,婚照"></label>
+        <label>客服回复<textarea id="unansweredFaqAnswer" required placeholder="输入客户看到的正式回复内容"></textarea></label>
+        <div class="knowledge-form-actions">
+          <button id="cancelUnansweredFaqButton" type="button">取消</button>
+          <button class="primary" id="submitUnansweredFaqButton" type="submit">创建 FAQ 并标记已解决</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <script>
+    const API_BASE_URL = "https://photo-studio-prod-d2drpjd43ee075-1384636564.ap-shanghai.app.tcloudbase.com";
+    const STUDIO_ID = "demo-studio";
+    const statusLabels = {
+      new: "新线索",
+      contacted: "已联系",
+      booked: "已预约",
+      completed: "已完成",
+      invalid: "无效"
+    };
+    const unansweredStatusLabels = {
+      open: "待处理",
+      reviewed: "已查看",
+      resolved: "已解决",
+      ignored: "已忽略"
+    };
+    let apiToken = sessionStorage.getItem("photoStudioAdminToken") || "";
+    let leads = [];
+    let faqs = [];
+    let packages = [];
+    let analyticsStats = null;
+    let unansweredQuestions = [];
+    let faqSourceQuestionId = "";
+
+    const $ = (selector) => document.querySelector(selector);
+    const tokenInput = $("#apiToken");
+    const statusFilter = $("#statusFilter");
+    const unansweredStatusFilter = $("#unansweredStatusFilter");
+    tokenInput.value = apiToken;
+
+    function showToast(message) {
+      const toast = $("#toast");
+      toast.textContent = message;
+      toast.classList.remove("hidden");
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => toast.classList.add("hidden"), 2400);
+    }
+
+    function formatDate(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("zh-CN");
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function splitLines(value) {
+      return String(value ?? "")
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    function formatKnowledgeDate(value) {
+      if (!value) return "尚未记录时间";
+      return formatDate(value);
+    }
+
+    async function request(path, options = {}) {
+      const method = (options.method || "GET").toUpperCase();
+      const headers = {
+        "X-Admin-Token": apiToken,
+        ...(options.headers || {})
+      };
+
+      if (method !== "GET" && method !== "HEAD") {
+        headers["Content-Type"] = "application/json";
+      }
+
+      const response = await fetch(API_BASE_URL + path, {
+        ...options,
+        headers
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `请求失败：${response.status}`);
+      }
+      return data;
+    }
+
+    function render() {
+      const body = $("#leadBody");
+      const table = $("#leadTable");
+      const empty = $("#emptyState");
+      const error = $("#errorState");
+      body.innerHTML = "";
+      error.classList.add("hidden");
+
+      if (!leads.length) {
+        table.classList.add("hidden");
+        empty.classList.remove("hidden");
+        empty.textContent = "当前筛选条件下没有线索。";
+        $("#count").textContent = "0 条线索";
+        return;
+      }
+
+      empty.classList.add("hidden");
+      table.classList.remove("hidden");
+      $("#count").textContent = `${leads.length} 条线索`;
+      body.innerHTML = leads.map((lead) => {
+        const id = lead._id || lead.id;
+        const status = statusLabels[lead.status] ? lead.status : "new";
+        return `
+          <tr data-id="${escapeHtml(id)}">
+            <td>
+              <div class="lead-name">${escapeHtml(lead.name || "未填写")}</div>
+              <div class="lead-meta">${escapeHtml(lead.source || "-")}</div>
+            </td>
+            <td>${escapeHtml(lead.serviceType || "未填写")}<div class="lead-meta">${escapeHtml(lead.note || "")}</div></td>
+            <td>${escapeHtml(lead.preferredDate || "未填写")}</td>
+            <td>${escapeHtml(lead.budget || "未填写")}<div class="lead-meta">${escapeHtml(lead.contact || "-")}</div></td>
+            <td>
+              <div class="row-actions">
+                <select class="status-select" aria-label="线索状态">
+                  ${Object.entries(statusLabels).map(([key, label]) => `<option value="${key}" ${key === status ? "selected" : ""}>${label}</option>`).join("")}
+                </select>
+                <button class="save-button primary" type="button">保存</button>
+              </div>
+              <input class="note-input" value="${escapeHtml(lead.staffNote || "")}" placeholder="内部备注">
+              <div class="lead-meta"><span class="status status-${status}">${statusLabels[status]}</span></div>
+            </td>
+            <td>${escapeHtml(formatDate(lead.createdAt))}</td>
+          </tr>
+        `;
+      }).join("");
+
+      body.querySelectorAll(".save-button").forEach((button) => {
+        button.addEventListener("click", () => updateLead(button.closest("tr")));
+      });
+    }
+
+    async function loadLeads() {
+      if (!apiToken) {
+        $("#count").textContent = "尚未连接";
+        return;
+      }
+
+      $("#refreshButton").disabled = true;
+      try {
+        const query = new URLSearchParams({
+          studioId: STUDIO_ID,
+          status: statusFilter.value
+        });
+        const data = await request(`/api/photo-studio/admin/leads?${query}`);
+        leads = Array.isArray(data.leads) ? data.leads : [];
+        render();
+      } catch (error) {
+        $("#leadTable").classList.add("hidden");
+        $("#emptyState").classList.add("hidden");
+        $("#errorState").textContent = error instanceof TypeError
+          ? "浏览器无法访问接口，请检查 CloudBase 跨域设置或强制刷新页面。"
+          : error.message;
+        $("#errorState").classList.remove("hidden");
+        $("#count").textContent = "连接失败";
+      } finally {
+        $("#refreshButton").disabled = false;
+      }
+    }
+
+    function renderFaqs() {
+      const list = $("#faqList");
+      $("#faqCount").textContent = `${faqs.length} 条`;
+
+      if (!faqs.length) {
+        list.innerHTML = '<div class="knowledge-empty">暂无 FAQ，点击“新增 FAQ”开始。</div>';
+        return;
+      }
+
+      list.innerHTML = faqs.map((faq) => {
+        const id = faq._id || faq.id;
+        return `
+          <div class="knowledge-item ${faq.enabled ? "" : "disabled"}" data-faq-id="${escapeHtml(id)}">
+            <div class="knowledge-item-header">
+              <div>
+                <div class="knowledge-item-title">${escapeHtml(faq.category || "未分类")}</div>
+                <div class="knowledge-item-meta">${faq.enabled ? "启用中" : "已停用"} · ${escapeHtml(formatKnowledgeDate(faq.updatedAt))}</div>
+              </div>
+              <span class="status ${faq.enabled ? "status-booked" : "status-invalid"}">${faq.enabled ? "启用" : "停用"}</span>
+            </div>
+            <label class="field-label">分类<input class="faq-category" value="${escapeHtml(faq.category)}"></label>
+            <label class="field-label">关键词<input class="faq-keywords" value="${escapeHtml((faq.keywords || []).join(", "))}"></label>
+            <label class="field-label">客服回复<textarea class="faq-answer">${escapeHtml(faq.answer)}</textarea></label>
+            <div class="item-actions">
+              <button class="toggle-faq" type="button">${faq.enabled ? "停用" : "启用"}</button>
+              <button class="save-faq primary" type="button">保存</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      list.querySelectorAll(".save-faq").forEach((button) => {
+        button.addEventListener("click", () => updateFaq(button.closest("[data-faq-id]")));
+      });
+      list.querySelectorAll(".toggle-faq").forEach((button) => {
+        button.addEventListener("click", () => toggleFaq(button.closest("[data-faq-id]")));
+      });
+    }
+
+    function renderPackages() {
+      const list = $("#packageList");
+      $("#packageCount").textContent = `${packages.length} 条`;
+
+      if (!packages.length) {
+        list.innerHTML = '<div class="knowledge-empty">暂无套餐，点击“新增套餐”开始。</div>';
+        return;
+      }
+
+      list.innerHTML = packages.map((item) => {
+        const id = item._id || item.id;
+        return `
+          <div class="knowledge-item ${item.enabled ? "" : "disabled"}" data-package-id="${escapeHtml(id)}">
+            <div class="knowledge-item-header">
+              <div>
+                <div class="knowledge-item-title">${escapeHtml(item.name || "未命名套餐")}</div>
+                <div class="knowledge-item-meta">${escapeHtml(item.price || "未设置价格")} · ${item.enabled ? "启用中" : "已停用"} · ${escapeHtml(formatKnowledgeDate(item.updatedAt))}</div>
+              </div>
+              <span class="status ${item.enabled ? "status-booked" : "status-invalid"}">${item.enabled ? "启用" : "停用"}</span>
+            </div>
+            <label class="field-label">套餐名称<input class="package-name" value="${escapeHtml(item.name)}"></label>
+            <label class="field-label">分类<input class="package-category" value="${escapeHtml(item.category)}"></label>
+            <label class="field-label">价格<input class="package-price" value="${escapeHtml(item.price)}"></label>
+            <label class="field-label">包含内容<textarea class="package-items">${escapeHtml((item.items || []).join("\n"))}</textarea></label>
+            <label class="field-label">套餐说明<textarea class="package-description">${escapeHtml(item.description)}</textarea></label>
+            <div class="item-actions">
+              <button class="toggle-package" type="button">${item.enabled ? "停用" : "启用"}</button>
+              <button class="save-package primary" type="button">保存</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      list.querySelectorAll(".save-package").forEach((button) => {
+        button.addEventListener("click", () => updatePackage(button.closest("[data-package-id]")));
+      });
+      list.querySelectorAll(".toggle-package").forEach((button) => {
+        button.addEventListener("click", () => togglePackage(button.closest("[data-package-id]")));
+      });
+    }
+
+    async function loadKnowledge() {
+      if (!apiToken) return;
+
+      $("#refreshKnowledgeButton").disabled = true;
+      try {
+        const query = new URLSearchParams({
+          studioId: STUDIO_ID,
+          type: "all"
+        });
+        const data = await request(`/api/photo-studio/admin/knowledge?${query}`);
+        faqs = Array.isArray(data.faqs) ? data.faqs : [];
+        packages = Array.isArray(data.packages) ? data.packages : [];
+        renderFaqs();
+        renderPackages();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        $("#refreshKnowledgeButton").disabled = false;
+      }
+    }
+
+    function renderStats() {
+      const stats = analyticsStats || {};
+      document.querySelectorAll("[data-stat]").forEach((node) => {
+        const key = node.dataset.stat;
+        const value = stats[key];
+        node.textContent = key === "conversionRate" && typeof value === "number"
+          ? `${value}%`
+          : typeof value === "number" ? String(value) : "-";
+      });
+    }
+
+    function renderUnansweredQuestions() {
+      const list = $("#unansweredList");
+      const empty = $("#unansweredEmpty");
+      list.innerHTML = "";
+
+      if (!unansweredQuestions.length) {
+        empty.classList.remove("hidden");
+        empty.textContent = "当前筛选条件下没有未匹配问题。";
+        return;
+      }
+
+      empty.classList.add("hidden");
+      list.innerHTML = unansweredQuestions.map((question) => {
+        const id = question._id || question.id;
+        const status = unansweredStatusLabels[question.status] ? question.status : "open";
+        return `
+          <article class="question-item" data-question-id="${escapeHtml(id)}">
+            <div class="question-header">
+              <div>
+                <div class="question-text">${escapeHtml(question.question || "未记录问题")}</div>
+                <div class="question-meta">出现 ${Number(question.count || 1)} 次 · 最近提问：${escapeHtml(formatDate(question.lastAskedAt || question.createdAt))}</div>
+              </div>
+              <span class="status status-${status === "open" ? "new" : status === "reviewed" ? "contacted" : status === "resolved" ? "booked" : "invalid"}">${unansweredStatusLabels[status]}</span>
+            </div>
+            <div class="question-controls">
+              <select class="unanswered-status" aria-label="问题处理状态">
+                ${Object.entries(unansweredStatusLabels).map(([key, label]) => `<option value="${key}" ${key === status ? "selected" : ""}>${label}</option>`).join("")}
+              </select>
+              <textarea class="unanswered-note" placeholder="内部备注，例如：已补充到 FAQ">${escapeHtml(question.staffNote || "")}</textarea>
+              <button class="convert-to-faq" type="button" ${status === "resolved" ? "disabled" : ""}>${status === "resolved" ? "已转为 FAQ" : "转为 FAQ"}</button>
+              <button class="save-unanswered primary" type="button">保存</button>
+            </div>
+          </article>
+        `;
+      }).join("");
+
+      list.querySelectorAll(".save-unanswered").forEach((button) => {
+        button.addEventListener("click", () => updateUnansweredQuestion(button.closest("[data-question-id]")));
+      });
+      list.querySelectorAll(".convert-to-faq").forEach((button) => {
+        button.addEventListener("click", () => openFaqModal(button.closest("[data-question-id]")));
+      });
+    }
+
+    async function loadAnalytics() {
+      if (!apiToken) return;
+
+      $("#refreshAnalyticsButton").disabled = true;
+      try {
+        const statsQuery = new URLSearchParams({ studioId: STUDIO_ID });
+        const questionQuery = new URLSearchParams({
+          studioId: STUDIO_ID,
+          status: unansweredStatusFilter.value
+        });
+        const [statsData, questionsData] = await Promise.all([
+          request(`/api/photo-studio/admin/stats?${statsQuery}`),
+          request(`/api/photo-studio/admin/unanswered?${questionQuery}`)
+        ]);
+        analyticsStats = statsData.stats || null;
+        unansweredQuestions = Array.isArray(questionsData.questions) ? questionsData.questions : [];
+        renderStats();
+        renderUnansweredQuestions();
+      } catch (error) {
+        analyticsStats = null;
+        unansweredQuestions = [];
+        renderStats();
+        $("#unansweredList").innerHTML = "";
+        $("#unansweredEmpty").textContent = error instanceof TypeError
+          ? "浏览器无法访问接口，请检查 CloudBase 跨域设置。"
+          : error.message;
+        $("#unansweredEmpty").classList.remove("hidden");
+      } finally {
+        $("#refreshAnalyticsButton").disabled = false;
+      }
+    }
+
+    async function updateUnansweredQuestion(row) {
+      const id = row.dataset.questionId;
+      const button = row.querySelector(".save-unanswered");
+      button.disabled = true;
+      try {
+        await request(`/api/photo-studio/admin/unanswered/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: row.querySelector(".unanswered-status").value,
+            staffNote: row.querySelector(".unanswered-note").value
+          })
+        });
+        showToast("问题状态已更新");
+        await loadAnalytics();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function openFaqModal(row) {
+      const question = unansweredQuestions.find((item) => (item._id || item.id) === row.dataset.questionId);
+      if (!question) {
+        showToast("未找到该问题");
+        return;
+      }
+
+      faqSourceQuestionId = row.dataset.questionId;
+      $("#sourceQuestionText").textContent = question.question || "未记录问题";
+      $("#unansweredFaqCategory").value = question.category || "";
+      $("#unansweredFaqKeywords").value = question.question || "";
+      $("#unansweredFaqAnswer").value = "";
+      $("#faqModal").classList.remove("hidden");
+      $("#faqModal").setAttribute("aria-hidden", "false");
+      $("#unansweredFaqCategory").focus();
+    }
+
+    function closeFaqModal() {
+      faqSourceQuestionId = "";
+      $("#unansweredFaqForm").reset();
+      $("#faqModal").classList.add("hidden");
+      $("#faqModal").setAttribute("aria-hidden", "true");
+    }
+
+    async function createFaqFromQuestion(event) {
+      event.preventDefault();
+      const button = $("#submitUnansweredFaqButton");
+      button.disabled = true;
+
+      try {
+        const faqData = await request("/api/photo-studio/admin/knowledge/faqs", {
+          method: "POST",
+          body: JSON.stringify({
+            studioId: STUDIO_ID,
+            category: $("#unansweredFaqCategory").value,
+            keywords: $("#unansweredFaqKeywords").value,
+            answer: $("#unansweredFaqAnswer").value
+          })
+        });
+
+        try {
+          await request(`/api/photo-studio/admin/unanswered/${encodeURIComponent(faqSourceQuestionId)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              status: "resolved",
+              staffNote: `已转为 FAQ${faqData.id ? `：${faqData.id}` : ""}`
+            })
+          });
+          showToast("FAQ 已创建，问题已标记为已解决");
+        } catch (error) {
+          showToast(`FAQ 已创建，但问题状态更新失败：${error.message}`);
+        }
+
+        closeFaqModal();
+        await Promise.all([loadKnowledge(), loadAnalytics()]);
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function setFormVisible(formId, visible) {
+      $(formId).classList.toggle("hidden", !visible);
+    }
+
+    async function createFaq(event) {
+      event.preventDefault();
+      const button = event.target.querySelector("button[type=submit]");
+      button.disabled = true;
+      try {
+        await request("/api/photo-studio/admin/knowledge/faqs", {
+          method: "POST",
+          body: JSON.stringify({
+            studioId: STUDIO_ID,
+            category: $("#faqCategory").value,
+            keywords: $("#faqKeywords").value,
+            answer: $("#faqAnswer").value
+          })
+        });
+        event.target.reset();
+        setFormVisible("#faqForm", false);
+        showToast("FAQ 已创建");
+        await loadKnowledge();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function createPackage(event) {
+      event.preventDefault();
+      const button = event.target.querySelector("button[type=submit]");
+      button.disabled = true;
+      try {
+        await request("/api/photo-studio/admin/knowledge/packages", {
+          method: "POST",
+          body: JSON.stringify({
+            studioId: STUDIO_ID,
+            name: $("#packageName").value,
+            category: $("#packageCategory").value,
+            price: $("#packagePrice").value,
+            items: splitLines($("#packageItems").value),
+            description: $("#packageDescription").value
+          })
+        });
+        event.target.reset();
+        setFormVisible("#packageForm", false);
+        showToast("套餐已创建");
+        await loadKnowledge();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function updateFaq(row, enabledOverride) {
+      const button = row.querySelector(".save-faq") || row.querySelector(".toggle-faq");
+      button.disabled = true;
+      try {
+        const current = faqs.find((faq) => (faq._id || faq.id) === row.dataset.faqId);
+        await request(`/api/photo-studio/admin/knowledge/faqs/${encodeURIComponent(row.dataset.faqId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            category: row.querySelector(".faq-category").value,
+            keywords: row.querySelector(".faq-keywords").value,
+            answer: row.querySelector(".faq-answer").value,
+            enabled: typeof enabledOverride === "boolean" ? enabledOverride : current.enabled
+          })
+        });
+        showToast("FAQ 已更新");
+        await loadKnowledge();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function toggleFaq(row) {
+      const current = faqs.find((faq) => (faq._id || faq.id) === row.dataset.faqId);
+      updateFaq(row, !current.enabled);
+    }
+
+    async function updatePackage(row, enabledOverride) {
+      const button = row.querySelector(".save-package") || row.querySelector(".toggle-package");
+      button.disabled = true;
+      try {
+        const current = packages.find((item) => (item._id || item.id) === row.dataset.packageId);
+        await request(`/api/photo-studio/admin/knowledge/packages/${encodeURIComponent(row.dataset.packageId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: row.querySelector(".package-name").value,
+            category: row.querySelector(".package-category").value,
+            price: row.querySelector(".package-price").value,
+            items: splitLines(row.querySelector(".package-items").value),
+            description: row.querySelector(".package-description").value,
+            enabled: typeof enabledOverride === "boolean" ? enabledOverride : current.enabled
+          })
+        });
+        showToast("套餐已更新");
+        await loadKnowledge();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function togglePackage(row) {
+      const current = packages.find((item) => (item._id || item.id) === row.dataset.packageId);
+      updatePackage(row, !current.enabled);
+    }
+
+    async function updateLead(row) {
+      const id = row.dataset.id;
+      const button = row.querySelector(".save-button");
+      button.disabled = true;
+      try {
+        await request(`/api/photo-studio/admin/leads/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: row.querySelector(".status-select").value,
+            staffNote: row.querySelector(".note-input").value
+          })
+        });
+        showToast("线索已更新");
+        await loadLeads();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    $("#authForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      apiToken = tokenInput.value.trim();
+      sessionStorage.setItem("photoStudioAdminToken", apiToken);
+      loadLeads();
+      loadKnowledge();
+      loadAnalytics();
+    });
+    $("#refreshButton").addEventListener("click", loadLeads);
+    statusFilter.addEventListener("change", loadLeads);
+    document.querySelectorAll(".tab-button").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".tab-button").forEach((item) => item.classList.remove("active"));
+        document.querySelectorAll(".view").forEach((view) => view.classList.add("hidden"));
+        button.classList.add("active");
+        $(`#${button.dataset.view}`).classList.remove("hidden");
+        if (button.dataset.view === "knowledgeView") loadKnowledge();
+        if (button.dataset.view === "analyticsView") loadAnalytics();
+      });
+    });
+    $("#addFaqButton").addEventListener("click", () => setFormVisible("#faqForm", true));
+    $("#cancelFaqButton").addEventListener("click", () => setFormVisible("#faqForm", false));
+    $("#faqForm").addEventListener("submit", createFaq);
+    $("#addPackageButton").addEventListener("click", () => setFormVisible("#packageForm", true));
+    $("#cancelPackageButton").addEventListener("click", () => setFormVisible("#packageForm", false));
+    $("#packageForm").addEventListener("submit", createPackage);
+    $("#refreshKnowledgeButton").addEventListener("click", loadKnowledge);
+    $("#refreshAnalyticsButton").addEventListener("click", loadAnalytics);
+    unansweredStatusFilter.addEventListener("change", loadAnalytics);
+    $("#closeFaqModalButton").addEventListener("click", closeFaqModal);
+    $("#cancelUnansweredFaqButton").addEventListener("click", closeFaqModal);
+    $("#unansweredFaqForm").addEventListener("submit", createFaqFromQuestion);
+    $("#faqModal").addEventListener("click", (event) => {
+      if (event.target.id === "faqModal") closeFaqModal();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !$("#faqModal").classList.contains("hidden")) {
+        closeFaqModal();
+      }
+    });
+    if (apiToken) {
+      loadLeads();
+      loadKnowledge();
+      loadAnalytics();
+    }
+  </script>
+</body>
+</html>
