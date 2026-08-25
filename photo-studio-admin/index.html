@@ -206,16 +206,24 @@
     }
 
     async function request(path, options = {}) {
+      const method = (options.method || "GET").toUpperCase();
+      const headers = {
+        "X-Admin-Token": apiToken,
+        ...(options.headers || {})
+      };
+
+      if (method !== "GET" && method !== "HEAD") {
+        headers["Content-Type"] = "application/json";
+      }
+
       const response = await fetch(API_BASE_URL + path, {
         ...options,
-        headers: {
-          "Content-Type": "application/json",
-          "X-Admin-Token": apiToken,
-          ...(options.headers || {})
-        }
+        headers
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || `请求失败：${response.status}`);
+      if (!response.ok) {
+        throw new Error(data.error || `请求失败：${response.status}`);
+      }
       return data;
     }
 
@@ -288,7 +296,9 @@
       } catch (error) {
         $("#leadTable").classList.add("hidden");
         $("#emptyState").classList.add("hidden");
-        $("#errorState").textContent = error.message;
+        $("#errorState").textContent = error instanceof TypeError
+          ? "浏览器无法访问接口，请检查 CloudBase 跨域设置或强制刷新页面。"
+          : error.message;
         $("#errorState").classList.remove("hidden");
         $("#count").textContent = "连接失败";
       } finally {
