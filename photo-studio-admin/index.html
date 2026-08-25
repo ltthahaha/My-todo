@@ -259,7 +259,7 @@
     .question-meta { margin-top: 5px; color: var(--muted); font-size: 12px; }
     .question-controls {
       display: grid;
-      grid-template-columns: minmax(120px, 180px) minmax(180px, 1fr) auto;
+      grid-template-columns: minmax(120px, 180px) minmax(180px, 1fr) auto auto;
       gap: 8px;
       align-items: center;
       margin-top: 12px;
@@ -287,6 +287,66 @@
       .analytics-actions { margin-top: 10px; }
       .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .question-controls { grid-template-columns: 1fr; }
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(31, 41, 51, 0.42);
+      z-index: 10;
+    }
+    .modal {
+      width: min(560px, 100%);
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+      padding: 20px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 20px 60px rgba(31, 41, 51, 0.2);
+    }
+    .modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .modal-header h2 { font-size: 18px; }
+    .modal-close {
+      min-width: 38px;
+      padding: 0;
+      font-size: 20px;
+      line-height: 1;
+    }
+    .modal-form {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .modal-form label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .modal-form input, .modal-form textarea { margin-top: 4px; }
+    .modal-form textarea {
+      display: block;
+      width: 100%;
+      min-height: 110px;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      resize: vertical;
+      font: inherit;
+    }
+    .modal-question {
+      padding: 10px 12px;
+      border-left: 3px solid var(--brand);
+      background: #f5f8fc;
+      color: var(--text);
+      word-break: break-word;
     }
   </style>
 </head>
@@ -438,6 +498,27 @@
     </section>
   </main>
   <div class="toast hidden" id="toast"></div>
+  <div class="modal-backdrop hidden" id="faqModal" aria-hidden="true">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="faqModalTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="faqModalTitle">将问题转为 FAQ</h2>
+          <p class="subtitle">保存后会自动将该问题标记为“已解决”。</p>
+        </div>
+        <button class="modal-close" id="closeFaqModalButton" type="button" aria-label="关闭">×</button>
+      </div>
+      <form id="unansweredFaqForm" class="modal-form">
+        <div class="modal-question" id="sourceQuestionText"></div>
+        <label>分类<input id="unansweredFaqCategory" required placeholder="例如：婚纱照"></label>
+        <label>关键词<input id="unansweredFaqKeywords" required placeholder="用逗号分隔，例如：婚纱,婚照"></label>
+        <label>客服回复<textarea id="unansweredFaqAnswer" required placeholder="输入客户看到的正式回复内容"></textarea></label>
+        <div class="knowledge-form-actions">
+          <button id="cancelUnansweredFaqButton" type="button">取消</button>
+          <button class="primary" id="submitUnansweredFaqButton" type="submit">创建 FAQ 并标记已解决</button>
+        </div>
+      </form>
+    </section>
+  </div>
 
   <script>
     const API_BASE_URL = "https://photo-studio-prod-d2drpjd43ee075-1384636564.ap-shanghai.app.tcloudbase.com";
@@ -461,6 +542,7 @@
     let packages = [];
     let analyticsStats = null;
     let unansweredQuestions = [];
+    let faqSourceQuestionId = "";
 
     const $ = (selector) => document.querySelector(selector);
     const tokenInput = $("#apiToken");
@@ -745,6 +827,7 @@
                 ${Object.entries(unansweredStatusLabels).map(([key, label]) => `<option value="${key}" ${key === status ? "selected" : ""}>${label}</option>`).join("")}
               </select>
               <textarea class="unanswered-note" placeholder="内部备注，例如：已补充到 FAQ">${escapeHtml(question.staffNote || "")}</textarea>
+              <button class="convert-to-faq" type="button" ${status === "resolved" ? "disabled" : ""}>${status === "resolved" ? "已转为 FAQ" : "转为 FAQ"}</button>
               <button class="save-unanswered primary" type="button">保存</button>
             </div>
           </article>
@@ -753,6 +836,9 @@
 
       list.querySelectorAll(".save-unanswered").forEach((button) => {
         button.addEventListener("click", () => updateUnansweredQuestion(button.closest("[data-question-id]")));
+      });
+      list.querySelectorAll(".convert-to-faq").forEach((button) => {
+        button.addEventListener("click", () => openFaqModal(button.closest("[data-question-id]")));
       });
     }
 
@@ -802,6 +888,68 @@
         });
         showToast("问题状态已更新");
         await loadAnalytics();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function openFaqModal(row) {
+      const question = unansweredQuestions.find((item) => (item._id || item.id) === row.dataset.questionId);
+      if (!question) {
+        showToast("未找到该问题");
+        return;
+      }
+
+      faqSourceQuestionId = row.dataset.questionId;
+      $("#sourceQuestionText").textContent = question.question || "未记录问题";
+      $("#unansweredFaqCategory").value = question.category || "";
+      $("#unansweredFaqKeywords").value = question.question || "";
+      $("#unansweredFaqAnswer").value = "";
+      $("#faqModal").classList.remove("hidden");
+      $("#faqModal").setAttribute("aria-hidden", "false");
+      $("#unansweredFaqCategory").focus();
+    }
+
+    function closeFaqModal() {
+      faqSourceQuestionId = "";
+      $("#unansweredFaqForm").reset();
+      $("#faqModal").classList.add("hidden");
+      $("#faqModal").setAttribute("aria-hidden", "true");
+    }
+
+    async function createFaqFromQuestion(event) {
+      event.preventDefault();
+      const button = $("#submitUnansweredFaqButton");
+      button.disabled = true;
+
+      try {
+        const faqData = await request("/api/photo-studio/admin/knowledge/faqs", {
+          method: "POST",
+          body: JSON.stringify({
+            studioId: STUDIO_ID,
+            category: $("#unansweredFaqCategory").value,
+            keywords: $("#unansweredFaqKeywords").value,
+            answer: $("#unansweredFaqAnswer").value
+          })
+        });
+
+        try {
+          await request(`/api/photo-studio/admin/unanswered/${encodeURIComponent(faqSourceQuestionId)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              status: "resolved",
+              staffNote: `已转为 FAQ${faqData.id ? `：${faqData.id}` : ""}`
+            })
+          });
+          showToast("FAQ 已创建，问题已标记为已解决");
+        } catch (error) {
+          showToast(`FAQ 已创建，但问题状态更新失败：${error.message}`);
+        }
+
+        closeFaqModal();
+        await Promise.all([loadKnowledge(), loadAnalytics()]);
       } catch (error) {
         showToast(error.message);
       } finally {
@@ -973,6 +1121,17 @@
     $("#refreshKnowledgeButton").addEventListener("click", loadKnowledge);
     $("#refreshAnalyticsButton").addEventListener("click", loadAnalytics);
     unansweredStatusFilter.addEventListener("change", loadAnalytics);
+    $("#closeFaqModalButton").addEventListener("click", closeFaqModal);
+    $("#cancelUnansweredFaqButton").addEventListener("click", closeFaqModal);
+    $("#unansweredFaqForm").addEventListener("submit", createFaqFromQuestion);
+    $("#faqModal").addEventListener("click", (event) => {
+      if (event.target.id === "faqModal") closeFaqModal();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !$("#faqModal").classList.contains("hidden")) {
+        closeFaqModal();
+      }
+    });
     if (apiToken) {
       loadLeads();
       loadKnowledge();
