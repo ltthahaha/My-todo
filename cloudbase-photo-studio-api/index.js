@@ -3,6 +3,7 @@ const cloudbase = require("@cloudbase/js-sdk");
 const crypto = require("crypto");
 const fallbackFaq = require("./data/faq.json");
 const fallbackPackages = require("./data/packages.json");
+const { generateReply, getAvailability } = require("./ai/provider");
 
 const app = express();
 const port = Number(process.env.PORT || 9000);
@@ -507,6 +508,7 @@ app.get("/health", (req, res) => {
         unansweredQuestions: unansweredCollection
       }
     },
+    ai: getAvailability(),
     timestamp: new Date().toISOString()
   });
 });
@@ -665,6 +667,8 @@ app.get("/api/photo-studio/admin/stats", requireAdmin, async (req, res) => {
       faqMatchedChats,
       packageMatchedChats,
       packageListChats,
+      aiAnsweredChats,
+      aiFallbackChats,
       totalUnanswered,
       openUnanswered
     ] = await Promise.all([
@@ -678,6 +682,8 @@ app.get("/api/photo-studio/admin/stats", requireAdmin, async (req, res) => {
       countDocuments(chatCollection, { studioId, matchType: "faq" }),
       countDocuments(chatCollection, { studioId, matchType: "package" }),
       countDocuments(chatCollection, { studioId, matchType: "package_list" }),
+      countDocuments(chatCollection, { studioId, aiUsed: true }),
+      countDocuments(chatCollection, { studioId, aiEnabled: true, aiUsed: false }),
       countDocuments(unansweredCollection, { studioId }),
       countDocuments(unansweredCollection, { studioId, status: "open" })
     ]);
@@ -700,6 +706,8 @@ app.get("/api/photo-studio/admin/stats", requireAdmin, async (req, res) => {
         faqMatchedChats,
         packageMatchedChats,
         packageListChats,
+        aiAnsweredChats,
+        aiFallbackChats,
         totalUnanswered,
         openUnanswered,
         conversionRate
@@ -1107,6 +1115,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
   const message = asString(req.body.message);
   const sessionId = asString(req.body.sessionId);
   const studioId = asString(req.body.studioId) || defaultStudioId;
+  const history = Array.isArray(req.body.history) ? req.body.history : [];
 
   if (!message) {
     res.status(400).json({
@@ -1132,20 +1141,32 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       !usePackageReply &&
       (listPackageIntent || (packageIntent && packages.length && !matchedFaq))
     );
-    const matchType = usePackageReply
+    const baseMatchType = usePackageReply
       ? "package"
       : usePackageListReply
         ? "package_list"
         : matchedFaq
           ? "faq"
           : "none";
-    const reply = usePackageReply
+    const fallbackReply = usePackageReply
       ? buildPackageReply(matchedPackage)
       : usePackageListReply
         ? buildPackageListReply(packages)
         : matchedFaq
           ? matchedFaq.answer
           : "这个问题目前需要门店顾问确认。你可以留下联系方式和意向日期，我们会尽快联系你。";
+    const aiAvailability = getAvailability();
+    const aiResult = aiAvailability.enabled
+      ? await generateReply({
+        message,
+        history,
+        faqs,
+        packages
+      })
+      : null;
+    const aiUsed = Boolean(aiResult && aiResult.text);
+    const matchType = aiUsed && baseMatchType === "none" ? "ai" : baseMatchType;
+    const reply = aiUsed ? aiResult.text : fallbackReply;
     const needHuman = matchType === "none";
     const leadIntent = /预约|档期|价格|多少钱|租|定金|联系|咨询|拍摄/.test(message);
 
@@ -1158,6 +1179,11 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       matchedPackageId: usePackageReply ? matchedPackage.id : null,
       matchType,
       needHuman,
+      aiEnabled: aiAvailability.enabled,
+      aiUsed,
+      aiFallback: Boolean(aiAvailability.enabled && !aiUsed),
+      aiProvider: aiUsed ? aiResult.provider : null,
+      aiLatencyMs: aiResult && aiResult.latencyMs ? aiResult.latencyMs : null,
       source: "douyin-miniapp",
       createdAt: new Date()
     });
@@ -1193,7 +1219,15 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       leadIntent,
       sessionId: sessionId || null,
       chatLog,
-      unanswered
+      unanswered,
+      ai: {
+        enabled: aiAvailability.enabled,
+        configured: aiAvailability.configured,
+        used: aiUsed,
+        fallback: Boolean(aiAvailability.enabled && !aiUsed),
+        provider: aiUsed ? aiResult.provider : null,
+        latencyMs: aiResult && aiResult.latencyMs ? aiResult.latencyMs : null
+      }
     });
   } catch (error) {
     console.error("Chat API failed", error);

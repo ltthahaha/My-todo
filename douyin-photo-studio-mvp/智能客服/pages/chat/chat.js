@@ -27,6 +27,7 @@ const knowledgeBase = [
 
 Page({
   data: {
+    sessionId: "",
     messages: [
       {
         role: "bot",
@@ -38,6 +39,10 @@ Page({
   },
 
   onLoad: function (options) {
+    this.setData({
+      sessionId: `douyin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    })
+
     if (options.question) {
       const question = decodeURIComponent(options.question)
       this.setData({ inputValue: question }, () => {
@@ -66,6 +71,12 @@ Page({
 
     const hit = knowledgeBase.find((item) => item.keywords.some((keyword) => question.includes(keyword)))
     const userMessage = { role: "user", text: question }
+    const history = this.data.messages
+      .slice(-6)
+      .map((item) => ({
+        role: item.role === "bot" ? "assistant" : "user",
+        content: item.text
+      }))
 
     this.setData({
       messages: this.data.messages.concat(userMessage),
@@ -74,8 +85,9 @@ Page({
 
     api.chat({
       studioId: "demo-studio",
-      sessionId: `douyin-${Date.now()}`,
-      message: question
+      sessionId: this.data.sessionId,
+      message: question,
+      history
     }).then((response) => {
       const reply = response && response.reply
         ? response.reply

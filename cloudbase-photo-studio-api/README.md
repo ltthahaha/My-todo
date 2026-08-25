@@ -28,6 +28,9 @@ cloudbase-photo-studio-api/
 ├─ data/
 │  ├─ faq.json
 │  └─ packages.json
+├─ ai/
+│  ├─ prompt.js
+│  └─ provider.js
 ├─ index.js
 ├─ package.json
 ├─ scf_bootstrap
@@ -64,6 +67,13 @@ CLOUDBASE_CHAT_COLLECTION=chat_messages
 CLOUDBASE_UNANSWERED_COLLECTION=unanswered_questions
 FEISHU_BOT_WEBHOOK=你的飞书群机器人 Webhook
 ADMIN_API_TOKEN=线索管理后台访问令牌
+AI_ENABLED=false
+AI_PROVIDER=volcengine
+ARK_API_KEY=火山方舟服务端 API Key
+ARK_MODEL=模型接入点 ID
+ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3/chat/completions
+AI_TIMEOUT_MS=8000
+AI_MAX_TOKENS=300
 ```
 
 HTTP 云函数需要显式配置服务端鉴权。推荐在 CloudBase 的 API Key 管理中创建服务端 API Key，然后在云函数环境变量中配置 `CLOUDBASE_APIKEY`。
@@ -134,6 +144,58 @@ invalid
 
 请勿将 `ADMIN_API_TOKEN` 写入抖音小程序或提交到 GitHub。
 
+### AI 增强客服
+
+AI 功能默认关闭。开启前，先确认 FAQ、套餐和门店规则已经在 CloudBase 中维护完整：
+
+```text
+AI_ENABLED=true
+AI_PROVIDER=volcengine
+ARK_API_KEY=你的服务端 API Key
+ARK_MODEL=你的模型接入点 ID
+```
+
+模型密钥只能配置在 CloudBase HTTP 云函数环境变量中，不能放进抖音小程序、静态管理后台或 GitHub。
+
+聊天接口会把当前用户问题、最近最多 6 条对话、FAQ 和套餐资料发送给模型。模型被要求只能基于门店资料回答；模型未配置、超时、报错或返回 `NEED_HUMAN` 时，自动回退到现有 FAQ/套餐规则回复。
+
+小程序聊天请求可额外传入：
+
+```json
+{
+  "studioId": "demo-studio",
+  "sessionId": "douyin-demo-001",
+  "message": "两个人拍婚纱照多少钱？",
+  "history": [
+    {
+      "role": "user",
+      "content": "你们有什么婚纱照套餐？"
+    },
+    {
+      "role": "assistant",
+      "content": "目前有轻奢婚纱照套餐，价格 ¥3999 起。"
+    }
+  ]
+}
+```
+
+响应中的 `ai` 字段用于测试和监控：
+
+```json
+{
+  "enabled": true,
+  "configured": true,
+  "used": true,
+  "fallback": false,
+  "provider": "volcengine",
+  "latencyMs": 820
+}
+```
+
+聊天记录会增加 `aiEnabled`、`aiUsed`、`aiFallback`、`aiProvider` 和 `aiLatencyMs` 字段。运营统计接口会返回 `aiAnsweredChats` 和 `aiFallbackChats`。
+
+建议先使用 50 个真实问题做灰度测试，重点检查价格、套餐内容、档期、定金和退款等问题，确认回答准确后再面向全部用户开启。
+
 ### 知识库管理接口
 
 查询 FAQ 和套餐：
@@ -187,6 +249,8 @@ humanRequiredChats      待人工处理的聊天数
 faqMatchedChats         FAQ 命中次数
 packageMatchedChats     单个套餐命中次数
 packageListChats        套餐列表命中次数
+aiAnsweredChats         AI 成功回答次数
+aiFallbackChats         AI 开启但回退到规则回复的次数
 totalUnanswered         未匹配问题总数
 openUnanswered          待处理未匹配问题数
 conversionRate          已预约线索 / 总线索的百分比
