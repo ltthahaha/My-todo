@@ -140,6 +140,89 @@ function normalizePackage(item) {
   };
 }
 
+function normalizeKeywords(value) {
+  if (Array.isArray(value)) {
+    return value.map(asString).filter(Boolean);
+  }
+
+  return asString(value)
+    .split(/[，,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeAdminFaq(item) {
+  return {
+    _id: asString(item._id),
+    id: asString(item.id) || asString(item._id),
+    studioId: asString(item.studioId),
+    category: asString(item.category),
+    keywords: normalizeKeywords(item.keywords),
+    answer: asString(item.answer),
+    enabled: item.enabled !== false && item.isActive !== false,
+    createdAt: item.createdAt || null,
+    updatedAt: item.updatedAt || null
+  };
+}
+
+function normalizeAdminPackage(item) {
+  return {
+    _id: asString(item._id),
+    id: asString(item.id) || asString(item._id),
+    studioId: asString(item.studioId),
+    name: asString(item.name || item.packageName),
+    category: asString(item.category),
+    price: asString(item.price),
+    items: Array.isArray(item.items)
+      ? item.items.map(asString).filter(Boolean)
+      : asString(item.items)
+        .split(/[；;\n]/)
+        .map((value) => value.trim())
+        .filter(Boolean),
+    description: asString(item.description),
+    enabled: item.enabled !== false && item.isActive !== false,
+    createdAt: item.createdAt || null,
+    updatedAt: item.updatedAt || null
+  };
+}
+
+function getAdminCollection(collectionName, studioId) {
+  const db = getDatabase();
+
+  if (!db) {
+    return null;
+  }
+
+  return db.collection(collectionName)
+    .where({ studioId })
+    .limit(200);
+}
+
+function cleanRecordFields(record, fields) {
+  return fields.reduce((result, field) => {
+    if (Object.prototype.hasOwnProperty.call(record, field)) {
+      result[field] = record[field];
+    }
+    return result;
+  }, {});
+}
+
+function parseEnabled(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (value === "true" || value === "1") {
+    return true;
+  }
+
+  if (value === "false" || value === "0") {
+    return false;
+  }
+
+  return null;
+}
+
 async function getCollectionData(collectionName, studioId, fallback) {
   const db = getDatabase();
 
@@ -434,6 +517,293 @@ app.patch("/api/photo-studio/admin/leads/:leadId", requireAdmin, async (req, res
     res.status(500).json({
       ok: false,
       error: error.message || "Lead update failed"
+    });
+  }
+});
+
+app.get("/api/photo-studio/admin/knowledge", requireAdmin, async (req, res) => {
+  const studioId = asString(req.query.studioId) || defaultStudioId;
+  const type = asString(req.query.type) || "all";
+  const db = getDatabase();
+
+  if (!["all", "faqs", "packages"].includes(type)) {
+    res.status(400).json({
+      ok: false,
+      error: "Invalid knowledge type"
+    });
+    return;
+  }
+
+  if (!db) {
+    res.status(503).json({
+      ok: false,
+      error: "CloudBase database is not configured"
+    });
+    return;
+  }
+
+  try {
+    const result = {
+      ok: true,
+      studioId,
+      faqs: [],
+      packages: []
+    };
+
+    if (type === "all" || type === "faqs") {
+      const faqResult = await getAdminCollection(faqCollection, studioId).get();
+      result.faqs = Array.isArray(faqResult.data)
+        ? faqResult.data.map(normalizeAdminFaq)
+        : [];
+    }
+
+    if (type === "all" || type === "packages") {
+      const packageResult = await getAdminCollection(packageCollection, studioId).get();
+      result.packages = Array.isArray(packageResult.data)
+        ? packageResult.data.map(normalizeAdminPackage)
+        : [];
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error("Admin knowledge list failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Knowledge list failed"
+    });
+  }
+});
+
+app.post("/api/photo-studio/admin/knowledge/faqs", requireAdmin, async (req, res) => {
+  const studioId = asString(req.body.studioId) || defaultStudioId;
+  const category = asString(req.body.category);
+  const keywords = normalizeKeywords(req.body.keywords);
+  const answer = asString(req.body.answer);
+  const db = getDatabase();
+
+  if (!category || !keywords.length || !answer) {
+    res.status(400).json({
+      ok: false,
+      error: "FAQ requires category, keywords and answer"
+    });
+    return;
+  }
+
+  if (!db) {
+    res.status(503).json({
+      ok: false,
+      error: "CloudBase database is not configured"
+    });
+    return;
+  }
+
+  try {
+    const now = new Date();
+    const record = {
+      studioId,
+      category,
+      keywords,
+      answer,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now
+    };
+    const result = await db.collection(faqCollection).add(record);
+
+    res.status(201).json({
+      ok: true,
+      type: "faq",
+      id: result.id || result._id || null,
+      record
+    });
+  } catch (error) {
+    console.error("Admin FAQ create failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "FAQ create failed"
+    });
+  }
+});
+
+app.patch("/api/photo-studio/admin/knowledge/faqs/:faqId", requireAdmin, async (req, res) => {
+  const faqId = asString(req.params.faqId);
+  const db = getDatabase();
+  const update = cleanRecordFields(req.body, ["category", "answer"]);
+  const keywords = normalizeKeywords(req.body.keywords);
+  const enabled = parseEnabled(req.body.enabled);
+
+  if (!faqId) {
+    res.status(400).json({
+      ok: false,
+      error: "Missing FAQ ID"
+    });
+    return;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(req.body, "keywords")) {
+    update.keywords = keywords;
+  }
+
+  if (enabled !== null) {
+    update.enabled = enabled;
+  }
+
+  update.updatedAt = new Date();
+
+  if (
+    (Object.prototype.hasOwnProperty.call(update, "category") && !asString(update.category)) ||
+    (Object.prototype.hasOwnProperty.call(update, "answer") && !asString(update.answer)) ||
+    (Object.prototype.hasOwnProperty.call(update, "keywords") && !update.keywords.length)
+  ) {
+    res.status(400).json({
+      ok: false,
+      error: "Invalid FAQ fields"
+    });
+    return;
+  }
+
+  if (!db) {
+    res.status(503).json({
+      ok: false,
+      error: "CloudBase database is not configured"
+    });
+    return;
+  }
+
+  try {
+    await db.collection(faqCollection).doc(faqId).update(update);
+    res.json({
+      ok: true,
+      type: "faq",
+      id: faqId,
+      update
+    });
+  } catch (error) {
+    console.error("Admin FAQ update failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "FAQ update failed"
+    });
+  }
+});
+
+app.post("/api/photo-studio/admin/knowledge/packages", requireAdmin, async (req, res) => {
+  const studioId = asString(req.body.studioId) || defaultStudioId;
+  const name = asString(req.body.name);
+  const category = asString(req.body.category);
+  const price = asString(req.body.price);
+  const items = normalizeKeywords(req.body.items);
+  const description = asString(req.body.description);
+  const db = getDatabase();
+
+  if (!name || !category || !price) {
+    res.status(400).json({
+      ok: false,
+      error: "Package requires name, category and price"
+    });
+    return;
+  }
+
+  if (!db) {
+    res.status(503).json({
+      ok: false,
+      error: "CloudBase database is not configured"
+    });
+    return;
+  }
+
+  try {
+    const now = new Date();
+    const record = {
+      studioId,
+      name,
+      category,
+      price,
+      items,
+      description,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now
+    };
+    const result = await db.collection(packageCollection).add(record);
+
+    res.status(201).json({
+      ok: true,
+      type: "package",
+      id: result.id || result._id || null,
+      record
+    });
+  } catch (error) {
+    console.error("Admin package create failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Package create failed"
+    });
+  }
+});
+
+app.patch("/api/photo-studio/admin/knowledge/packages/:packageId", requireAdmin, async (req, res) => {
+  const packageId = asString(req.params.packageId);
+  const db = getDatabase();
+  const update = cleanRecordFields(req.body, [
+    "name",
+    "category",
+    "price",
+    "description"
+  ]);
+  const items = normalizeKeywords(req.body.items);
+  const enabled = parseEnabled(req.body.enabled);
+
+  if (!packageId) {
+    res.status(400).json({
+      ok: false,
+      error: "Missing package ID"
+    });
+    return;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(req.body, "items")) {
+    update.items = items;
+  }
+
+  if (enabled !== null) {
+    update.enabled = enabled;
+  }
+
+  update.updatedAt = new Date();
+
+  const requiredFields = ["name", "category", "price"];
+  if (requiredFields.some((field) =>
+    Object.prototype.hasOwnProperty.call(update, field) && !asString(update[field])
+  )) {
+    res.status(400).json({
+      ok: false,
+      error: "Invalid package fields"
+    });
+    return;
+  }
+
+  if (!db) {
+    res.status(503).json({
+      ok: false,
+      error: "CloudBase database is not configured"
+    });
+    return;
+  }
+
+  try {
+    await db.collection(packageCollection).doc(packageId).update(update);
+    res.json({
+      ok: true,
+      type: "package",
+      id: packageId,
+      update
+    });
+  } catch (error) {
+    console.error("Admin package update failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Package update failed"
     });
   }
 });

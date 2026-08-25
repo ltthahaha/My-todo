@@ -107,11 +107,110 @@
       box-shadow: var(--shadow);
     }
     .hidden { display: none; }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-top: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .tab-button {
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 6px 6px 0 0;
+      background: transparent;
+      color: var(--muted);
+    }
+    .tab-button.active {
+      border-bottom-color: var(--brand);
+      color: var(--brand);
+    }
+    .view { margin-top: 16px; }
+    .knowledge-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .knowledge-actions { display: flex; gap: 8px; }
+    .knowledge-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .knowledge-panel {
+      min-width: 0;
+      padding: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .knowledge-panel h2 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 18px;
+    }
+    .knowledge-list { display: grid; gap: 12px; margin-top: 14px; }
+    .knowledge-item {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfd;
+    }
+    .knowledge-item.disabled { opacity: 0.65; }
+    .knowledge-item-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .knowledge-item-title { font-weight: 700; }
+    .knowledge-item-meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .knowledge-form {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+    .knowledge-form label { color: var(--muted); font-size: 12px; font-weight: 700; }
+    .knowledge-form textarea {
+      display: block;
+      width: 100%;
+      min-height: 86px;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      resize: vertical;
+      font: inherit;
+    }
+    .knowledge-form input, .knowledge-form textarea { margin-top: 4px; }
+    .knowledge-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .knowledge-item .field-label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    .knowledge-item textarea { min-height: 74px; }
+    .knowledge-item .item-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .knowledge-empty { padding: 24px 8px; text-align: center; color: var(--muted); }
     @media (max-width: 720px) {
       main { width: min(100% - 20px, 1180px); margin: 16px auto; }
       header, .toolbar { display: block; }
       .auth { margin-top: 16px; min-width: 0; }
       .filters { margin-bottom: 10px; }
+      .knowledge-grid { grid-template-columns: 1fr; }
+      .knowledge-toolbar { display: block; }
+      .knowledge-actions { margin-top: 10px; }
     }
   </style>
 </head>
@@ -128,38 +227,91 @@
       </form>
     </header>
 
-    <section class="toolbar">
-      <div class="filters">
-        <label for="statusFilter">状态</label>
-        <select id="statusFilter">
-          <option value="all">全部</option>
-          <option value="new">新线索</option>
-          <option value="contacted">已联系</option>
-          <option value="booked">已预约</option>
-          <option value="completed">已完成</option>
-          <option value="invalid">无效</option>
-        </select>
-        <button id="refreshButton" type="button">刷新</button>
+    <nav class="tabs" aria-label="管理模块">
+      <button class="tab-button active" type="button" data-view="leadsView">线索管理</button>
+      <button class="tab-button" type="button" data-view="knowledgeView">知识库管理</button>
+    </nav>
+
+    <section id="leadsView" class="view">
+      <div class="toolbar">
+        <div class="filters">
+          <label for="statusFilter">状态</label>
+          <select id="statusFilter">
+            <option value="all">全部</option>
+            <option value="new">新线索</option>
+            <option value="contacted">已联系</option>
+            <option value="booked">已预约</option>
+            <option value="completed">已完成</option>
+            <option value="invalid">无效</option>
+          </select>
+          <button id="refreshButton" type="button">刷新</button>
+        </div>
+        <div class="count" id="count">尚未连接</div>
       </div>
-      <div class="count" id="count">尚未连接</div>
+
+      <section class="table-wrap">
+        <div class="empty" id="emptyState">输入管理令牌后连接。</div>
+        <div class="error hidden" id="errorState"></div>
+        <table class="hidden" id="leadTable">
+          <thead>
+            <tr>
+              <th>客户</th>
+              <th>拍摄需求</th>
+              <th>意向日期</th>
+              <th>预算 / 联系方式</th>
+              <th>状态与备注</th>
+              <th>创建时间</th>
+            </tr>
+          </thead>
+          <tbody id="leadBody"></tbody>
+        </table>
+      </section>
     </section>
 
-    <section class="table-wrap">
-      <div class="empty" id="emptyState">输入管理令牌后连接。</div>
-      <div class="error hidden" id="errorState"></div>
-      <table class="hidden" id="leadTable">
-        <thead>
-          <tr>
-            <th>客户</th>
-            <th>拍摄需求</th>
-            <th>意向日期</th>
-            <th>预算 / 联系方式</th>
-            <th>状态与备注</th>
-            <th>创建时间</th>
-          </tr>
-        </thead>
-        <tbody id="leadBody"></tbody>
-      </table>
+    <section id="knowledgeView" class="view hidden">
+      <div class="knowledge-toolbar">
+        <div>
+          <h2>知识库管理</h2>
+          <p class="subtitle">维护客服 FAQ 和套餐信息，停用后不会被小程序客服使用。</p>
+        </div>
+        <div class="knowledge-actions">
+          <button id="addFaqButton" type="button">新增 FAQ</button>
+          <button id="addPackageButton" class="primary" type="button">新增套餐</button>
+          <button id="refreshKnowledgeButton" type="button">刷新</button>
+        </div>
+      </div>
+
+      <div class="knowledge-grid">
+        <article class="knowledge-panel">
+          <h2><span>FAQ</span><span class="count" id="faqCount">0 条</span></h2>
+          <form id="faqForm" class="knowledge-form hidden">
+            <label>分类<input id="faqCategory" required placeholder="例如：婚纱照"></label>
+            <label>关键词<input id="faqKeywords" required placeholder="用逗号分隔，例如：婚纱,婚照"></label>
+            <label>客服回复<textarea id="faqAnswer" required placeholder="输入客户看到的回复内容"></textarea></label>
+            <div class="knowledge-form-actions">
+              <button id="cancelFaqButton" type="button">取消</button>
+              <button class="primary" type="submit">创建 FAQ</button>
+            </div>
+          </form>
+          <div id="faqList" class="knowledge-list"></div>
+        </article>
+
+        <article class="knowledge-panel">
+          <h2><span>套餐</span><span class="count" id="packageCount">0 条</span></h2>
+          <form id="packageForm" class="knowledge-form hidden">
+            <label>套餐名称<input id="packageName" required placeholder="例如：轻奢婚纱照"></label>
+            <label>分类<input id="packageCategory" required placeholder="例如：婚纱照"></label>
+            <label>价格<input id="packagePrice" required placeholder="例如：¥3999 起"></label>
+            <label>包含内容<textarea id="packageItems" placeholder="每行一项"></textarea></label>
+            <label>套餐说明<textarea id="packageDescription" placeholder="输入套餐适用人群或补充说明"></textarea></label>
+            <div class="knowledge-form-actions">
+              <button id="cancelPackageButton" type="button">取消</button>
+              <button class="primary" type="submit">创建套餐</button>
+            </div>
+          </form>
+          <div id="packageList" class="knowledge-list"></div>
+        </article>
+      </div>
     </section>
   </main>
   <div class="toast hidden" id="toast"></div>
@@ -176,6 +328,8 @@
     };
     let apiToken = sessionStorage.getItem("photoStudioAdminToken") || "";
     let leads = [];
+    let faqs = [];
+    let packages = [];
 
     const $ = (selector) => document.querySelector(selector);
     const tokenInput = $("#apiToken");
@@ -203,6 +357,18 @@
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+    }
+
+    function splitLines(value) {
+      return String(value ?? "")
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    function formatKnowledgeDate(value) {
+      if (!value) return "尚未记录时间";
+      return formatDate(value);
     }
 
     async function request(path, options = {}) {
@@ -306,6 +472,221 @@
       }
     }
 
+    function renderFaqs() {
+      const list = $("#faqList");
+      $("#faqCount").textContent = `${faqs.length} 条`;
+
+      if (!faqs.length) {
+        list.innerHTML = '<div class="knowledge-empty">暂无 FAQ，点击“新增 FAQ”开始。</div>';
+        return;
+      }
+
+      list.innerHTML = faqs.map((faq) => {
+        const id = faq._id || faq.id;
+        return `
+          <div class="knowledge-item ${faq.enabled ? "" : "disabled"}" data-faq-id="${escapeHtml(id)}">
+            <div class="knowledge-item-header">
+              <div>
+                <div class="knowledge-item-title">${escapeHtml(faq.category || "未分类")}</div>
+                <div class="knowledge-item-meta">${faq.enabled ? "启用中" : "已停用"} · ${escapeHtml(formatKnowledgeDate(faq.updatedAt))}</div>
+              </div>
+              <span class="status ${faq.enabled ? "status-booked" : "status-invalid"}">${faq.enabled ? "启用" : "停用"}</span>
+            </div>
+            <label class="field-label">分类<input class="faq-category" value="${escapeHtml(faq.category)}"></label>
+            <label class="field-label">关键词<input class="faq-keywords" value="${escapeHtml((faq.keywords || []).join(", "))}"></label>
+            <label class="field-label">客服回复<textarea class="faq-answer">${escapeHtml(faq.answer)}</textarea></label>
+            <div class="item-actions">
+              <button class="toggle-faq" type="button">${faq.enabled ? "停用" : "启用"}</button>
+              <button class="save-faq primary" type="button">保存</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      list.querySelectorAll(".save-faq").forEach((button) => {
+        button.addEventListener("click", () => updateFaq(button.closest("[data-faq-id]")));
+      });
+      list.querySelectorAll(".toggle-faq").forEach((button) => {
+        button.addEventListener("click", () => toggleFaq(button.closest("[data-faq-id]")));
+      });
+    }
+
+    function renderPackages() {
+      const list = $("#packageList");
+      $("#packageCount").textContent = `${packages.length} 条`;
+
+      if (!packages.length) {
+        list.innerHTML = '<div class="knowledge-empty">暂无套餐，点击“新增套餐”开始。</div>';
+        return;
+      }
+
+      list.innerHTML = packages.map((item) => {
+        const id = item._id || item.id;
+        return `
+          <div class="knowledge-item ${item.enabled ? "" : "disabled"}" data-package-id="${escapeHtml(id)}">
+            <div class="knowledge-item-header">
+              <div>
+                <div class="knowledge-item-title">${escapeHtml(item.name || "未命名套餐")}</div>
+                <div class="knowledge-item-meta">${escapeHtml(item.price || "未设置价格")} · ${item.enabled ? "启用中" : "已停用"} · ${escapeHtml(formatKnowledgeDate(item.updatedAt))}</div>
+              </div>
+              <span class="status ${item.enabled ? "status-booked" : "status-invalid"}">${item.enabled ? "启用" : "停用"}</span>
+            </div>
+            <label class="field-label">套餐名称<input class="package-name" value="${escapeHtml(item.name)}"></label>
+            <label class="field-label">分类<input class="package-category" value="${escapeHtml(item.category)}"></label>
+            <label class="field-label">价格<input class="package-price" value="${escapeHtml(item.price)}"></label>
+            <label class="field-label">包含内容<textarea class="package-items">${escapeHtml((item.items || []).join("\n"))}</textarea></label>
+            <label class="field-label">套餐说明<textarea class="package-description">${escapeHtml(item.description)}</textarea></label>
+            <div class="item-actions">
+              <button class="toggle-package" type="button">${item.enabled ? "停用" : "启用"}</button>
+              <button class="save-package primary" type="button">保存</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      list.querySelectorAll(".save-package").forEach((button) => {
+        button.addEventListener("click", () => updatePackage(button.closest("[data-package-id]")));
+      });
+      list.querySelectorAll(".toggle-package").forEach((button) => {
+        button.addEventListener("click", () => togglePackage(button.closest("[data-package-id]")));
+      });
+    }
+
+    async function loadKnowledge() {
+      if (!apiToken) return;
+
+      $("#refreshKnowledgeButton").disabled = true;
+      try {
+        const query = new URLSearchParams({
+          studioId: STUDIO_ID,
+          type: "all"
+        });
+        const data = await request(`/api/photo-studio/admin/knowledge?${query}`);
+        faqs = Array.isArray(data.faqs) ? data.faqs : [];
+        packages = Array.isArray(data.packages) ? data.packages : [];
+        renderFaqs();
+        renderPackages();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        $("#refreshKnowledgeButton").disabled = false;
+      }
+    }
+
+    function setFormVisible(formId, visible) {
+      $(formId).classList.toggle("hidden", !visible);
+    }
+
+    async function createFaq(event) {
+      event.preventDefault();
+      const button = event.target.querySelector("button[type=submit]");
+      button.disabled = true;
+      try {
+        await request("/api/photo-studio/admin/knowledge/faqs", {
+          method: "POST",
+          body: JSON.stringify({
+            studioId: STUDIO_ID,
+            category: $("#faqCategory").value,
+            keywords: $("#faqKeywords").value,
+            answer: $("#faqAnswer").value
+          })
+        });
+        event.target.reset();
+        setFormVisible("#faqForm", false);
+        showToast("FAQ 已创建");
+        await loadKnowledge();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function createPackage(event) {
+      event.preventDefault();
+      const button = event.target.querySelector("button[type=submit]");
+      button.disabled = true;
+      try {
+        await request("/api/photo-studio/admin/knowledge/packages", {
+          method: "POST",
+          body: JSON.stringify({
+            studioId: STUDIO_ID,
+            name: $("#packageName").value,
+            category: $("#packageCategory").value,
+            price: $("#packagePrice").value,
+            items: splitLines($("#packageItems").value),
+            description: $("#packageDescription").value
+          })
+        });
+        event.target.reset();
+        setFormVisible("#packageForm", false);
+        showToast("套餐已创建");
+        await loadKnowledge();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function updateFaq(row, enabledOverride) {
+      const button = row.querySelector(".save-faq") || row.querySelector(".toggle-faq");
+      button.disabled = true;
+      try {
+        const current = faqs.find((faq) => (faq._id || faq.id) === row.dataset.faqId);
+        await request(`/api/photo-studio/admin/knowledge/faqs/${encodeURIComponent(row.dataset.faqId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            category: row.querySelector(".faq-category").value,
+            keywords: row.querySelector(".faq-keywords").value,
+            answer: row.querySelector(".faq-answer").value,
+            enabled: typeof enabledOverride === "boolean" ? enabledOverride : current.enabled
+          })
+        });
+        showToast("FAQ 已更新");
+        await loadKnowledge();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function toggleFaq(row) {
+      const current = faqs.find((faq) => (faq._id || faq.id) === row.dataset.faqId);
+      updateFaq(row, !current.enabled);
+    }
+
+    async function updatePackage(row, enabledOverride) {
+      const button = row.querySelector(".save-package") || row.querySelector(".toggle-package");
+      button.disabled = true;
+      try {
+        const current = packages.find((item) => (item._id || item.id) === row.dataset.packageId);
+        await request(`/api/photo-studio/admin/knowledge/packages/${encodeURIComponent(row.dataset.packageId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: row.querySelector(".package-name").value,
+            category: row.querySelector(".package-category").value,
+            price: row.querySelector(".package-price").value,
+            items: splitLines(row.querySelector(".package-items").value),
+            description: row.querySelector(".package-description").value,
+            enabled: typeof enabledOverride === "boolean" ? enabledOverride : current.enabled
+          })
+        });
+        showToast("套餐已更新");
+        await loadKnowledge();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function togglePackage(row) {
+      const current = packages.find((item) => (item._id || item.id) === row.dataset.packageId);
+      updatePackage(row, !current.enabled);
+    }
+
     async function updateLead(row) {
       const id = row.dataset.id;
       const button = row.querySelector(".save-button");
@@ -332,10 +713,30 @@
       apiToken = tokenInput.value.trim();
       sessionStorage.setItem("photoStudioAdminToken", apiToken);
       loadLeads();
+      loadKnowledge();
     });
     $("#refreshButton").addEventListener("click", loadLeads);
     statusFilter.addEventListener("change", loadLeads);
-    if (apiToken) loadLeads();
+    document.querySelectorAll(".tab-button").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".tab-button").forEach((item) => item.classList.remove("active"));
+        document.querySelectorAll(".view").forEach((view) => view.classList.add("hidden"));
+        button.classList.add("active");
+        $(`#${button.dataset.view}`).classList.remove("hidden");
+        if (button.dataset.view === "knowledgeView") loadKnowledge();
+      });
+    });
+    $("#addFaqButton").addEventListener("click", () => setFormVisible("#faqForm", true));
+    $("#cancelFaqButton").addEventListener("click", () => setFormVisible("#faqForm", false));
+    $("#faqForm").addEventListener("submit", createFaq);
+    $("#addPackageButton").addEventListener("click", () => setFormVisible("#packageForm", true));
+    $("#cancelPackageButton").addEventListener("click", () => setFormVisible("#packageForm", false));
+    $("#packageForm").addEventListener("submit", createPackage);
+    $("#refreshKnowledgeButton").addEventListener("click", loadKnowledge);
+    if (apiToken) {
+      loadLeads();
+      loadKnowledge();
+    }
   </script>
 </body>
 </html>

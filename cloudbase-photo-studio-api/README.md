@@ -11,6 +11,11 @@ POST /api/photo-studio/chat
 POST /api/photo-studio/leads
 GET  /api/photo-studio/admin/leads
 PATCH /api/photo-studio/admin/leads/:leadId
+GET  /api/photo-studio/admin/knowledge
+POST /api/photo-studio/admin/knowledge/faqs
+PATCH /api/photo-studio/admin/knowledge/faqs/:faqId
+POST /api/photo-studio/admin/knowledge/packages
+PATCH /api/photo-studio/admin/knowledge/packages/:packageId
 ```
 
 ## 目录结构
@@ -82,7 +87,7 @@ HTTP 云函数需要显式配置服务端鉴权。推荐在 CloudBase 的 API Ke
 ```text
 允许来源：https://你的静态托管域名
 允许请求头：X-Admin-Token, Content-Type
-允许方法：GET, PATCH, OPTIONS
+允许方法：GET, POST, PATCH, OPTIONS
 ```
 
 本项目 API 不再额外返回 `Access-Control-Allow-Origin: *`，避免与 HTTP 网关的具体域名配置合并成无效的重复响应头。
@@ -124,6 +129,38 @@ invalid
 ```
 
 请勿将 `ADMIN_API_TOKEN` 写入抖音小程序或提交到 GitHub。
+
+### 知识库管理接口
+
+查询 FAQ 和套餐：
+
+```text
+GET /api/photo-studio/admin/knowledge?studioId=demo-studio&type=all
+```
+
+FAQ 必填字段：
+
+```json
+{
+  "category": "婚纱照",
+  "keywords": ["婚纱", "婚照"],
+  "answer": "客服回复内容"
+}
+```
+
+套餐必填字段：
+
+```json
+{
+  "name": "轻奢婚纱照",
+  "category": "婚纱照",
+  "price": "¥3999 起",
+  "items": ["2 套服装造型", "80 张底片"],
+  "description": "套餐说明"
+}
+```
+
+知识库不提供删除接口，使用 `enabled: false` 停用内容，避免误删历史配置。
 
 ## 数据库集合
 
