@@ -1,5 +1,6 @@
 const express = require("express");
 const cloudbase = require("@cloudbase/js-sdk");
+const crypto = require("crypto");
 const fallbackFaq = require("./data/faq.json");
 const fallbackPackages = require("./data/packages.json");
 
@@ -10,6 +11,7 @@ const faqCollection = process.env.CLOUDBASE_FAQ_COLLECTION || "faqs";
 const packageCollection = process.env.CLOUDBASE_PACKAGE_COLLECTION || "packages";
 const leadCollection = process.env.CLOUDBASE_LEAD_COLLECTION || "leads";
 const chatCollection = process.env.CLOUDBASE_CHAT_COLLECTION || "chat_messages";
+const adminApiToken = asString(process.env.ADMIN_API_TOKEN);
 
 let cloudbaseDb = null;
 
@@ -17,8 +19,11 @@ app.use(express.json({ limit: "256kb" }));
 
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Admin-Token"
+  );
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
 
   if (req.method === "OPTIONS") {
     res.status(204).end();
@@ -30,6 +35,50 @@ app.use((req, res, next) => {
 
 function asString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function readAdminToken(req) {
+  const headerToken = asString(req.get("x-admin-token"));
+  const authorization = asString(req.get("authorization"));
+  const bearerToken = authorization.startsWith("Bearer ")
+    ? authorization.slice(7).trim()
+    : "";
+
+  return headerToken || bearerToken;
+}
+
+function tokenMatches(expected, actual) {
+  if (!expected || !actual) {
+    return false;
+  }
+
+  const expectedBuffer = Buffer.from(expected);
+  const actualBuffer = Buffer.from(actual);
+
+  return (
+    expectedBuffer.length === actualBuffer.length &&
+    crypto.timingSafeEqual(expectedBuffer, actualBuffer)
+  );
+}
+
+function requireAdmin(req, res, next) {
+  if (!adminApiToken) {
+    res.status(503).json({
+      ok: false,
+      error: "Admin API is not configured"
+    });
+    return;
+  }
+
+  if (!tokenMatches(adminApiToken, readAdminToken(req))) {
+    res.status(401).json({
+      ok: false,
+      error: "Unauthorized"
+    });
+    return;
+  }
+
+  next();
 }
 
 function getDatabase() {
@@ -284,6 +333,112 @@ app.get("/api/photo-studio/knowledge", async (req, res) => {
     res.status(500).json({
       ok: false,
       error: "Knowledge service failed"
+    });
+  }
+});
+
+app.get("/api/photo-studio/admin/leads", requireAdmin, async (req, res) => {
+  const studioId = asString(req.query.studioId) || defaultStudioId;
+  const status = asString(req.query.status);
+  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
+  const db = getDatabase();
+
+  if (!db) {
+    res.status(503).json({
+      ok: false,
+      error: "CloudBase database is not configured"
+    });
+    return;
+  }
+
+  try {
+    const filter = { studioId };
+
+    if (status && status !== "all") {
+      filter.status = status;
+    }
+
+    const result = await db.collection(leadCollection)
+      .where(filter)
+      .orderBy("createdAt", "desc")
+      .limit(limit)
+      .get();
+
+    res.json({
+      ok: true,
+      studioId,
+      leads: Array.isArray(result.data) ? result.data : []
+    });
+  } catch (error) {
+    console.error("Admin lead list failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Lead list failed"
+    });
+  }
+});
+
+app.patch("/api/photo-studio/admin/leads/:leadId", requireAdmin, async (req, res) => {
+  const leadId = asString(req.params.leadId);
+  const status = asString(req.body.status);
+  const staffNote = asString(req.body.staffNote);
+  const allowedStatuses = new Set([
+    "new",
+    "contacted",
+    "booked",
+    "completed",
+    "invalid"
+  ]);
+  const db = getDatabase();
+
+  if (!leadId) {
+    res.status(400).json({
+      ok: false,
+      error: "Missing lead ID"
+    });
+    return;
+  }
+
+  if (status && !allowedStatuses.has(status)) {
+    res.status(400).json({
+      ok: false,
+      error: "Invalid lead status"
+    });
+    return;
+  }
+
+  if (!db) {
+    res.status(503).json({
+      ok: false,
+      error: "CloudBase database is not configured"
+    });
+    return;
+  }
+
+  const update = {
+    updatedAt: new Date()
+  };
+
+  if (status) {
+    update.status = status;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(req.body, "staffNote")) {
+    update.staffNote = staffNote;
+  }
+
+  try {
+    await db.collection(leadCollection).doc(leadId).update(update);
+    res.json({
+      ok: true,
+      leadId,
+      update
+    });
+  } catch (error) {
+    console.error("Admin lead update failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Lead update failed"
     });
   }
 });

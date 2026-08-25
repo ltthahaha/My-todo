@@ -9,6 +9,8 @@ GET  /health
 GET  /api/photo-studio/knowledge
 POST /api/photo-studio/chat
 POST /api/photo-studio/leads
+GET  /api/photo-studio/admin/leads
+PATCH /api/photo-studio/admin/leads/:leadId
 ```
 
 ## 目录结构
@@ -52,6 +54,7 @@ CLOUDBASE_PACKAGE_COLLECTION=packages
 CLOUDBASE_LEAD_COLLECTION=leads
 CLOUDBASE_CHAT_COLLECTION=chat_messages
 FEISHU_BOT_WEBHOOK=你的飞书群机器人 Webhook
+ADMIN_API_TOKEN=线索管理后台访问令牌
 ```
 
 HTTP 云函数需要显式配置服务端鉴权。推荐在 CloudBase 的 API Key 管理中创建服务端 API Key，然后在云函数环境变量中配置 `CLOUDBASE_APIKEY`。
@@ -71,6 +74,44 @@ HTTP 云函数需要显式配置服务端鉴权。推荐在 CloudBase 的 API Ke
 ```
 
 如果 `databaseConfigured` 或 `authConfigured` 为 `false`，先修正环境变量，再测试线索和聊天接口。
+
+### 线索管理接口
+
+线索管理接口需要在请求头中携带：
+
+```text
+X-Admin-Token: 你的 ADMIN_API_TOKEN
+```
+
+查询线索：
+
+```text
+GET /api/photo-studio/admin/leads?studioId=demo-studio&status=all
+```
+
+更新状态或内部备注：
+
+```text
+PATCH /api/photo-studio/admin/leads/{_id}
+Content-Type: application/json
+
+{
+  "status": "contacted",
+  "staffNote": "已通过电话联系客户"
+}
+```
+
+允许的状态值：
+
+```text
+new
+contacted
+booked
+completed
+invalid
+```
+
+请勿将 `ADMIN_API_TOKEN` 写入抖音小程序或提交到 GitHub。
 
 ## 数据库集合
 
