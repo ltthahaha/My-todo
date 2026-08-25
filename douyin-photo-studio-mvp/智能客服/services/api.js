@@ -1,4 +1,4 @@
-const API_BASE_URL = "https://my-todo-nm067hz9v-ltthahahas-projects.vercel.app"
+const API_BASE_URL = "https://photo-studio-prod-d2drpjd43ee075-1384636564.ap-shanghai.app.tcloudbase.com"
 
 function request(path, options = {}) {
   if (!API_BASE_URL) {
