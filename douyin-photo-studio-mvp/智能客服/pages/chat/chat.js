@@ -2,6 +2,7 @@ const api = require("../../services/api")
 const { getService } = require("../../services/catalog")
 
 const networkErrorAnswer = "当前连接有点慢，请稍后重试，或直接填写预约意向让门店顾问联系你。"
+const sessionStoragePrefix = "photo_studio_chat_session_"
 const generalService = {
   key: "general",
   title: "智能客服",
@@ -10,6 +11,64 @@ const generalService = {
   tag: "全品类咨询",
   description: "套餐、价格、预约、出片和租赁问题",
   questions: ["婚纱照多少钱？", "亲子照多久出片？", "可以租婚纱吗？", "怎么预约档期？"]
+}
+
+function getStoredSessionId(serviceKey) {
+  if (typeof tt === "undefined" || typeof tt.getStorageSync !== "function") {
+    return ""
+  }
+
+  const key = `${sessionStoragePrefix}${serviceKey}`
+
+  try {
+    const result = tt.getStorageSync({ key })
+    if (typeof result === "string") {
+      return result
+    }
+    if (result && typeof result.data === "string") {
+      return result.data
+    }
+  } catch (error) {
+    console.warn("read chat session failed", error)
+  }
+
+  try {
+    const result = tt.getStorageSync(key)
+    return typeof result === "string"
+      ? result
+      : (result && typeof result.data === "string" ? result.data : "")
+  } catch (error) {
+    console.warn("read chat session fallback failed", error)
+    return ""
+  }
+}
+
+function storeSessionId(serviceKey, sessionId) {
+  if (
+    typeof tt === "undefined" ||
+    typeof tt.setStorageSync !== "function" ||
+    !sessionId
+  ) {
+    return
+  }
+
+  const key = `${sessionStoragePrefix}${serviceKey}`
+
+  try {
+    tt.setStorageSync({
+      key,
+      data: sessionId
+    })
+    return
+  } catch (error) {
+    console.warn("store chat session failed", error)
+  }
+
+  try {
+    tt.setStorageSync(key, sessionId)
+  } catch (error) {
+    console.warn("store chat session fallback failed", error)
+  }
 }
 
 Page({
@@ -31,17 +90,20 @@ Page({
 
   onLoad: function (options) {
     const current = options.type ? getService(options.type) : generalService
+    const sessionId = getStoredSessionId(current.key) ||
+      `douyin-${current.key}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const welcomeText = current.key === "general"
       ? "你好，我是映白摄影智能客服。你可以咨询套餐、价格、服装、出片时间和预约流程。"
       : `你好，我可以帮你了解${current.title}的套餐、价格和预约安排。你想先了解哪一项呢？`
 
     this.setData({
-      sessionId: `douyin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      sessionId,
       serviceKey: current.key,
       service: current,
       messages: [{ role: "bot", text: welcomeText }],
       quickQuestions: current.questions
     }, () => {
+      storeSessionId(current.key, sessionId)
       if (options.question) {
         const question = decodeURIComponent(options.question)
         this.setData({ inputValue: question }, () => {
@@ -103,7 +165,9 @@ Page({
     }).then((response) => {
       console.log("chat answer source", {
         answerSource: response && response.answerSource,
+        knowledgeMatch: response && response.knowledgeMatch,
         matchType: response && response.matchType,
+        session: response && response.session,
         ai: response && response.ai
       })
       const reply = response && response.reply
@@ -116,7 +180,8 @@ Page({
         isSending: false,
         scrollIntoView: `message-${messages.length - 1}`
       })
-    }).catch(() => {
+    }).catch((error) => {
+      console.error("chat request failed", error)
       const messages = this.data.messages.concat({
         role: "bot",
         text: networkErrorAnswer

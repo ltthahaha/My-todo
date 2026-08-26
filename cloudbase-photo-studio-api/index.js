@@ -13,10 +13,13 @@ const faqCollection = process.env.CLOUDBASE_FAQ_COLLECTION || "faqs";
 const packageCollection = process.env.CLOUDBASE_PACKAGE_COLLECTION || "packages";
 const leadCollection = process.env.CLOUDBASE_LEAD_COLLECTION || "leads";
 const chatCollection = process.env.CLOUDBASE_CHAT_COLLECTION || "chat_messages";
+const chatSessionCollection = process.env.CLOUDBASE_CHAT_SESSION_COLLECTION || "chat_sessions";
 const unansweredCollection = process.env.CLOUDBASE_UNANSWERED_COLLECTION || "unanswered_questions";
 const adminApiToken = asString(process.env.ADMIN_API_TOKEN);
 const chatOperationTimeouts = {
   knowledge: 1800,
+  chatSessionRead: 700,
+  chatSessionWrite: 900,
   leadCapture: 1800,
   feishuNotification: 1000,
   chatLog: 1000,
@@ -410,6 +413,47 @@ function getConversationText(message, history) {
   return [...recentUserMessages, asString(message)].filter(Boolean).join(" ");
 }
 
+function mergeConversationHistory(storedHistory, requestHistory) {
+  const combined = [
+    ...(Array.isArray(storedHistory) ? storedHistory : []),
+    ...(Array.isArray(requestHistory) ? requestHistory : [])
+  ]
+    .filter((item) => item && (item.role === "user" || item.role === "assistant"))
+    .map((item) => ({
+      role: item.role,
+      content: asString(item.content || item.text).slice(0, 500)
+    }))
+    .filter((item) => item.content);
+  const seen = new Set();
+  const unique = combined.filter((item) => {
+    const key = `${item.role}:${item.content}`;
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+
+  return unique.slice(-8);
+}
+
+function getServiceType(serviceType, serviceKey) {
+  const explicit = asString(serviceType);
+
+  if (explicit) {
+    return explicit;
+  }
+
+  return {
+    wedding: "婚纱照",
+    travel: "旅拍",
+    family: "亲子照",
+    dress: "婚纱租赁"
+  }[asString(serviceKey)] || "";
+}
+
 function hasBusinessIntent(text) {
   return /婚纱照|婚纱|旅拍|旅游照|亲子照|亲子|婚纱租赁|礼服|套餐|预算|价格|多少钱|费用|预约|档期|拍摄|试穿|定金|精修|底片|出片|地址|营业|咨询|联系/.test(
     text
@@ -439,33 +483,153 @@ function extractLeadFields(text) {
   };
 }
 
-function mergeExtractedLead(aiResult, contact, contextText) {
+function extractConversationFacts(text, existingState, serviceType) {
+  const source = asString(text);
+  const previous = normalizeSessionState(existingState);
+  const extracted = extractLeadFields(source);
+  const destinationMatch = source.match(
+    /(?:去|到|前往)\s*([^，。！？,.!?]{2,16}?)(?=拍|旅拍|照|玩|旅游|$)/
+  );
+  const groupMatch = source.match(
+    /([一二三四五六七八九十\d]+)\s*(?:个人|人|位)/
+  );
+  const nameMatch = source.match(/(?:我叫|姓名是|名字是)\s*([^\s，。！？,.!?]{2,20})/);
+  const dateMatch = source.match(
+    /((?:[一二三四五六七八九十十一十二]+月份?)|(?:\d{1,2}月(?:\d{1,2}[日号]?)?)|今天|明天|后天|这周末|下周末|下周|下个月|本月底|月底)/
+  );
+  const inferredGroupSize = /两个人|二个人|和朋友一起|跟朋友一起|与朋友一起/.test(source)
+    ? "2人"
+    : "";
+
+  return {
+    ...previous,
+    serviceType: previous.serviceType || extracted.serviceType || serviceType || "",
+    destination: destinationMatch ? destinationMatch[1].trim() : previous.destination,
+    preferredDate: dateMatch ? dateMatch[1] : (extracted.preferredDate || previous.preferredDate),
+    groupSize: groupMatch
+      ? `${groupMatch[1]}人`
+      : (inferredGroupSize || previous.groupSize),
+    budget: extracted.budget || previous.budget,
+    contact: extractContact(source) || previous.contact,
+    name: nameMatch ? nameMatch[1].trim() : previous.name
+  };
+}
+
+function isBookingIntent(text, sessionState, history) {
+  const currentText = asString(text);
+  const waitingForContact = Array.isArray(history) && history
+    .slice(-3)
+    .some((item) =>
+      item &&
+      item.role === "assistant" &&
+      /留下(?:手机号|联系方式)|手机号或微信/.test(asString(item.content || item.text))
+    );
+
+  return Boolean(
+    /预约|预订|预定|报名|帮我约|安排档期|留档期|想约/.test(currentText) ||
+    (
+      sessionState &&
+      sessionState.pendingField === "contact" &&
+      Boolean(extractContact(currentText))
+    )
+    || (waitingForContact && Boolean(extractContact(currentText)))
+  );
+}
+
+function buildBookingReply(sessionState, bookingLead) {
+  const state = normalizeSessionState(sessionState);
+  const details = [
+    state.destination && `目的地是${state.destination}`,
+    state.preferredDate && `时间是${state.preferredDate}`,
+    state.groupSize && `同行${state.groupSize}`
+  ].filter(Boolean);
+  const summary = details.length
+    ? `我已经了解到您${details.join("，")}。`
+    : "我可以帮您登记预约意向。";
+
+  if (!state.contact) {
+    return `${summary}请留下手机号或微信，门店顾问会和您确认具体套餐与档期。`;
+  }
+
+  if (bookingLead && !bookingLead.stored) {
+    return `${summary}已收到您的联系方式，但预约登记暂时失败，请稍后重试或联系门店顾问。`;
+  }
+
+  return `${summary}我现在为您提交预约意向，请稍等。`;
+}
+
+function buildContextFallbackReply(sessionState, serviceType) {
+  const state = normalizeSessionState(sessionState);
+  const service = serviceType || state.serviceType || "摄影服务";
+
+  if (state.destination && state.preferredDate) {
+    return `可以为您安排${service}。您计划去${state.destination}，时间是${state.preferredDate}${state.groupSize ? `，同行${state.groupSize}` : ""}。请问更偏好自然风景还是城市街拍？`;
+  }
+
+  if (state.destination) {
+    return `去${state.destination}拍${service}可以的。请问您大概计划什么时候拍摄${state.groupSize ? `，同行${state.groupSize}` : ""}？`;
+  }
+
+  if (state.preferredDate) {
+    return `了解，您计划${state.preferredDate}拍${service}。请告诉我想去的城市或拍摄地点，我再帮您匹配方案。`;
+  }
+
+  return `可以帮您了解${service}的拍摄方案。请告诉我意向城市、日期或预算，我会继续为您推荐。`;
+}
+
+function mergeExtractedLead(
+  aiResult,
+  contact,
+  contextText,
+  sessionState,
+  bookingIntent
+) {
   const source = aiResult && typeof aiResult === "object" ? aiResult : {};
   const lead = normalizeAiLead(source.lead);
+  const state = normalizeSessionState(sessionState);
   const extracted = extractLeadFields(contextText);
   const hasIntent = contact && hasBusinessIntent(contextText);
   const leadStage = ["interested", "high_intent"].includes(source.leadStage)
     ? source.leadStage
-    : hasIntent
+    : bookingIntent
+      ? "high_intent"
+      : hasIntent
       ? "high_intent"
       : "none";
   const intent = source.intent && source.intent !== "other"
     ? source.intent
-    : hasIntent
+    : bookingIntent
+      ? "booking"
+      : hasIntent
       ? "booking"
       : "other";
 
+  if (!lead.name && state.name) {
+    lead.name = state.name;
+  }
   if (!lead.contact && contact) {
     lead.contact = contact;
+  }
+  if (!lead.contact && state.contact) {
+    lead.contact = state.contact;
   }
   if (!lead.serviceType && extracted.serviceType) {
     lead.serviceType = extracted.serviceType;
   }
+  if (!lead.serviceType && state.serviceType) {
+    lead.serviceType = state.serviceType;
+  }
   if (!lead.budget && extracted.budget) {
     lead.budget = extracted.budget;
   }
+  if (!lead.budget && state.budget) {
+    lead.budget = state.budget;
+  }
   if (!lead.preferredDate && extracted.preferredDate) {
     lead.preferredDate = extracted.preferredDate;
+  }
+  if (!lead.preferredDate && state.preferredDate) {
+    lead.preferredDate = state.preferredDate;
   }
 
   return {
@@ -513,6 +677,113 @@ async function saveChatMessage(record) {
     return {
       stored: false,
       reason: error.message || "chat log write failed"
+    };
+  }
+}
+
+function normalizeSessionState(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const recentHistory = Array.isArray(source.recentHistory)
+    ? source.recentHistory
+      .filter((item) => item && (item.role === "user" || item.role === "assistant"))
+      .map((item) => ({
+        role: item.role,
+        content: asString(item.content || item.text).slice(0, 500)
+      }))
+      .filter((item) => item.content)
+      .slice(-8)
+    : [];
+
+  return {
+    sessionId: asString(source.sessionId),
+    studioId: asString(source.studioId),
+    serviceKey: asString(source.serviceKey),
+    serviceType: asString(source.serviceType),
+    intent: asString(source.intent),
+    pendingField: asString(source.pendingField),
+    destination: asString(source.destination),
+    preferredDate: asString(source.preferredDate),
+    groupSize: asString(source.groupSize),
+    budget: asString(source.budget),
+    contact: asString(source.contact),
+    name: asString(source.name),
+    recentHistory,
+    lastUserMessage: asString(source.lastUserMessage),
+    lastReply: asString(source.lastReply),
+    lastAnswerSource: asString(source.lastAnswerSource),
+    lastMatchType: asString(source.lastMatchType),
+    updatedAt: source.updatedAt || null,
+    createdAt: source.createdAt || null
+  };
+}
+
+async function readSessionState(studioId, sessionId) {
+  const db = getDatabase();
+
+  if (!db || !sessionId) {
+    return null;
+  }
+
+  try {
+    const result = await db.collection(chatSessionCollection)
+      .where({ studioId, sessionId })
+      .limit(1)
+      .get();
+    const row = Array.isArray(result.data) ? result.data[0] : null;
+    return row ? normalizeSessionState(row) : null;
+  } catch (error) {
+    console.error("CloudBase chat session read failed", error);
+    return null;
+  }
+}
+
+async function saveSessionState(state) {
+  const db = getDatabase();
+  const session = normalizeSessionState(state);
+
+  if (!db || !session.sessionId) {
+    return {
+      stored: false,
+      reason: "CLOUDBASE_ENV_ID is not configured"
+    };
+  }
+
+  try {
+    const existing = await db.collection(chatSessionCollection)
+      .where({
+        studioId: session.studioId,
+        sessionId: session.sessionId
+      })
+      .limit(1)
+      .get();
+    const previous = Array.isArray(existing.data) ? existing.data[0] : null;
+    const now = new Date();
+    const record = {
+      ...session,
+      updatedAt: now,
+      createdAt: previous && previous.createdAt ? previous.createdAt : now
+    };
+
+    if (previous && previous._id) {
+      await db.collection(chatSessionCollection).doc(previous._id).update(record);
+      return {
+        stored: true,
+        id: previous._id,
+        updated: true
+      };
+    }
+
+    const result = await db.collection(chatSessionCollection).add(record);
+    return {
+      stored: true,
+      id: result.id || result._id || null,
+      updated: false
+    };
+  } catch (error) {
+    console.error("CloudBase chat session write failed", error);
+    return {
+      stored: false,
+      reason: error.message || "chat session write failed"
     };
   }
 }
@@ -763,6 +1034,107 @@ async function captureAiLead({
   }
 }
 
+async function captureBookingLead({
+  studioId,
+  sessionId,
+  sessionState,
+  message
+}) {
+  const state = normalizeSessionState(sessionState);
+  const contact = asString(state.contact);
+
+  if (!contact) {
+    return {
+      eligible: false,
+      stored: false,
+      deduplicated: false,
+      reason: "Booking workflow is waiting for contact"
+    };
+  }
+
+  const db = getDatabase();
+
+  if (!db) {
+    return {
+      eligible: true,
+      stored: false,
+      deduplicated: false,
+      lead: {
+        name: state.name,
+        contact,
+        serviceType: state.serviceType,
+        preferredDate: state.preferredDate,
+        budget: state.budget
+      },
+      reason: "CLOUDBASE_ENV_ID is not configured"
+    };
+  }
+
+  try {
+    const existing = await db.collection(leadCollection)
+      .where({
+        studioId,
+        sessionId,
+        source: "douyin-miniapp-booking"
+      })
+      .limit(1)
+      .get();
+    const previous = Array.isArray(existing.data) ? existing.data[0] : null;
+
+    if (previous && previous._id) {
+      return {
+        eligible: true,
+        stored: true,
+        deduplicated: true,
+        id: previous._id,
+        lead: previous
+      };
+    }
+
+    const lead = {
+      studioId,
+      sessionId,
+      name: state.name,
+      contact,
+      serviceType: state.serviceType,
+      preferredDate: state.preferredDate,
+      budget: state.budget,
+      note: [
+        `预约工作流：${message}`,
+        state.destination && `目的地：${state.destination}`,
+        state.groupSize && `同行人数：${state.groupSize}`
+      ].filter(Boolean).join("；"),
+      source: "douyin-miniapp-booking",
+      status: "new",
+      createdAt: new Date()
+    };
+    const storage = await saveLead(lead);
+
+    return {
+      eligible: true,
+      stored: storage.stored,
+      deduplicated: false,
+      id: storage.id,
+      lead
+    };
+  } catch (error) {
+    console.error("Booking lead capture failed", error);
+    return {
+      eligible: true,
+      stored: false,
+      deduplicated: false,
+      lead: {
+        name: state.name,
+        contact,
+        serviceType: state.serviceType,
+        preferredDate: state.preferredDate,
+        budget: state.budget
+      },
+      reason: error.message || "Booking lead capture failed"
+    };
+  }
+}
+
 function removeRegistrationClaims(value) {
   let text = asString(value);
   const patterns = [
@@ -830,6 +1202,7 @@ app.get("/health", (req, res) => {
         packages: packageCollection,
         leads: leadCollection,
         chatMessages: chatCollection,
+        chatSessions: chatSessionCollection,
         unansweredQuestions: unansweredCollection
       }
     },
@@ -1458,19 +1831,44 @@ app.post("/api/photo-studio/chat", async (req, res) => {
   }
 
   try {
+    const storedSession = await withTimeout(
+      () => readSessionState(studioId, conversationId),
+      chatOperationTimeouts.chatSessionRead,
+      null
+    );
     const knowledge = await withTimeout(
       () => getKnowledge(studioId),
       chatOperationTimeouts.knowledge,
       getFallbackKnowledge()
     );
     const { faqs, packages } = knowledge;
-    const serviceContext = serviceType || serviceKey;
-    const userConversationText = getConversationText(message, history);
+    const requestedServiceType = getServiceType(serviceType, serviceKey);
+    const serviceContext = requestedServiceType ||
+      (storedSession && storedSession.serviceType) ||
+      "";
+    const mergedHistory = mergeConversationHistory(
+      storedSession && storedSession.recentHistory,
+      history
+    );
+    const userConversationText = getConversationText(message, mergedHistory);
     const conversationText = serviceContext
       ? `${serviceContext} ${userConversationText}`
       : userConversationText;
+    const sessionState = extractConversationFacts(
+      userConversationText,
+      {
+        ...(storedSession || {}),
+        sessionId: conversationId,
+        studioId,
+        serviceKey: serviceKey || (storedSession && storedSession.serviceKey),
+        serviceType: serviceContext
+      },
+      serviceContext
+    );
     const greeting = isGreetingMessage(message);
-    const contact = extractContact(conversationText);
+    const contact = sessionState.contact || extractContact(userConversationText);
+    sessionState.contact = contact;
+    const bookingIntent = isBookingIntent(message, sessionState, mergedHistory);
     const matchedFaq = findFaq(message, faqs);
     const matchedPackage = findPackage(message, packages);
     const packageIntent = /套餐|价格|多少钱|预算|包含|内容|费用/.test(message);
@@ -1502,23 +1900,24 @@ app.post("/api/photo-studio/chat", async (req, res) => {
           ? matchedFaq.answer
           : greeting
             ? "你好，我是摄影店智能客服，可以帮你了解婚纱照、旅拍、亲子照、婚纱租赁和套餐价格。你想了解哪一项呢？"
-            : "我可以帮你了解婚纱照、旅拍、亲子照、婚纱租赁和套餐价格。你想了解哪一项呢？";
+            : buildContextFallbackReply(sessionState, serviceContext);
     const aiAvailability = getAvailability();
     const retrievedKnowledge = retrieveKnowledge({
       message,
-      history,
+      history: mergedHistory,
       faqs,
       packages,
       serviceType: serviceContext
     });
     const shouldUseAi = Boolean(
       aiAvailability.enabled &&
-      !greeting
+      !greeting &&
+      !bookingIntent
     );
     const aiResult = shouldUseAi
       ? await generateReply({
         message,
-        history,
+        history: mergedHistory,
         faqs: retrievedKnowledge.faqs,
         packages: retrievedKnowledge.packages,
         serviceType: serviceContext
@@ -1526,29 +1925,69 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       : null;
     const aiAttempted = Boolean(shouldUseAi);
     const aiUsed = Boolean(aiResult && aiResult.text);
-    const answerSource = aiUsed ? "ai" : baseMatchType;
-    const matchType = answerSource;
+    let bookingLead = null;
     let reply = aiUsed ? aiResult.text : fallbackReply;
+
+    if (bookingIntent) {
+      bookingLead = await captureBookingLead({
+        studioId,
+        sessionId: conversationId,
+        sessionState,
+        message
+      });
+      reply = bookingLead.stored
+        ? "已记录您的预约意向，门店顾问会尽快联系您确认具体档期。"
+        : buildBookingReply(sessionState, bookingLead);
+    }
+
+    const answerSource = bookingIntent
+      ? "workflow"
+      : aiUsed
+        ? "ai"
+        : aiAttempted
+          ? "fallback"
+          : baseMatchType === "none"
+            ? "fallback"
+            : baseMatchType;
+    const knowledgeMatch = baseMatchType === "none" || baseMatchType === "greeting"
+      ? null
+      : baseMatchType;
+    const matchType = bookingIntent ? "booking" : baseMatchType;
     const effectiveAiResult = mergeExtractedLead(
       aiUsed ? aiResult : null,
       contact,
-      conversationText
+      userConversationText,
+      sessionState,
+      bookingIntent
     );
+    const aiLead = normalizeAiLead(effectiveAiResult && effectiveAiResult.lead);
+    sessionState.name = sessionState.name || aiLead.name;
+    sessionState.contact = sessionState.contact || aiLead.contact;
+    sessionState.serviceType = sessionState.serviceType || aiLead.serviceType || serviceContext;
+    sessionState.preferredDate = sessionState.preferredDate || aiLead.preferredDate;
+    sessionState.budget = sessionState.budget || aiLead.budget;
     const leadIntent = Boolean(
       (effectiveAiResult &&
         ["interested", "high_intent"].includes(effectiveAiResult.leadStage)) ||
-      hasBusinessIntent(conversationText)
+      hasBusinessIntent(userConversationText) ||
+      bookingIntent
     );
 
-    const aiLead = normalizeAiLead(effectiveAiResult && effectiveAiResult.lead);
-    const leadCaptureEligible = Boolean(
-      effectiveAiResult &&
-      ["interested", "high_intent"].includes(effectiveAiResult.leadStage) &&
-      leadIntent &&
-      hasLeadContact(aiLead)
-    );
-    const needHuman = matchType === "none" && !aiUsed && !leadCaptureEligible;
-    const leadCapture = aiUsed || leadCaptureEligible
+    const leadCaptureEligible = bookingIntent
+      ? Boolean(bookingLead && bookingLead.eligible)
+      : Boolean(
+        effectiveAiResult &&
+        ["interested", "high_intent"].includes(effectiveAiResult.leadStage) &&
+        leadIntent &&
+        hasLeadContact(aiLead)
+      );
+    const needHuman = baseMatchType === "none" &&
+      !aiUsed &&
+      !bookingIntent &&
+      !leadCaptureEligible;
+    const leadCapture = bookingIntent
+      ? bookingLead
+      : aiUsed || leadCaptureEligible
       ? await withTimeout(
         () => captureAiLead({
           studioId,
@@ -1570,7 +2009,9 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         eligible: false,
         stored: false,
         deduplicated: false,
-        reason: "AI did not answer this message"
+        reason: aiAttempted
+          ? "AI did not answer this message"
+          : "AI was not attempted"
       };
     let notification = null;
 
@@ -1593,9 +2034,35 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       }
     }
 
-    if (aiUsed || leadCapture.eligible) {
+    if (!bookingIntent && (aiUsed || leadCapture.eligible)) {
       reply = finalizeAiReply(reply, leadCapture);
     }
+
+    sessionState.intent = bookingIntent
+      ? "booking"
+      : effectiveAiResult.intent || sessionState.intent || "";
+    sessionState.pendingField = bookingIntent
+      ? (leadCapture.stored ? "completed" : (sessionState.contact ? "submission" : "contact"))
+      : "";
+    sessionState.recentHistory = mergeConversationHistory(
+      mergedHistory,
+      [
+        { role: "user", content: message },
+        { role: "assistant", content: reply }
+      ]
+    );
+    sessionState.lastUserMessage = message;
+    sessionState.lastReply = reply;
+    sessionState.lastAnswerSource = answerSource;
+    sessionState.lastMatchType = matchType;
+    const sessionStorage = await withTimeout(
+      () => saveSessionState(sessionState),
+      chatOperationTimeouts.chatSessionWrite,
+      {
+        stored: false,
+        reason: "chat session write timed out"
+      }
+    );
 
     const chatLog = await withTimeout(
       () => saveChatMessage({
@@ -1606,7 +2073,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         matchedFaqId: matchedFaq ? matchedFaq.id : null,
         matchedPackageId: usePackageReply ? matchedPackage.id : null,
         serviceKey: serviceKey || null,
-        serviceType: serviceType || null,
+        serviceType: serviceContext || null,
         matchType,
         needHuman,
         aiEnabled: aiAvailability.enabled,
@@ -1615,6 +2082,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         aiFallbackReason: aiResult && aiResult.reason ? aiResult.reason : null,
         aiSkipped: Boolean(aiAvailability.enabled && !aiAttempted),
         answerSource,
+        knowledgeMatch,
         aiProvider: aiUsed ? aiResult.provider : null,
         aiLatencyMs: aiResult && aiResult.latencyMs ? aiResult.latencyMs : null,
         aiStructured: Boolean(aiUsed && aiResult.structured),
@@ -1629,6 +2097,15 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         aiLeadId: leadCapture.id || null,
         aiLeadNotificationSent: Boolean(notification && notification.sent),
         knowledgeContext: retrievedKnowledge.context,
+        sessionState: {
+          destination: sessionState.destination,
+          preferredDate: sessionState.preferredDate,
+          groupSize: sessionState.groupSize,
+          budget: sessionState.budget,
+          contact: sessionState.contact,
+          pendingField: sessionState.pendingField
+        },
+        sessionStored: sessionStorage.stored,
         source: "douyin-miniapp",
         createdAt: new Date()
       }),
@@ -1641,7 +2118,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
 
     let unanswered = null;
 
-    if (matchType === "none" && !leadCaptureEligible) {
+    if (baseMatchType === "none" && !aiUsed && !bookingIntent && !leadCaptureEligible) {
       const now = new Date();
       unanswered = await withTimeout(
         () => saveUnansweredQuestion({
@@ -1673,10 +2150,26 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       matchedFaqId: matchedFaq ? matchedFaq.id : null,
       matchedPackageId: usePackageReply ? matchedPackage.id : null,
       answerSource,
+      knowledgeMatch,
       matchType,
       needHuman,
       leadIntent,
       sessionId: conversationId,
+      session: {
+        stored: sessionStorage.stored,
+        id: sessionStorage.id || null,
+        reason: sessionStorage.reason || null,
+        historyCount: sessionState.recentHistory.length,
+        state: {
+          serviceType: sessionState.serviceType,
+          destination: sessionState.destination,
+          preferredDate: sessionState.preferredDate,
+          groupSize: sessionState.groupSize,
+          budget: sessionState.budget,
+          contact: sessionState.contact,
+          pendingField: sessionState.pendingField
+        }
+      },
       chatLog,
       unanswered,
       leadCapture: {

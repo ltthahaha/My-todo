@@ -64,6 +64,7 @@ CLOUDBASE_FAQ_COLLECTION=faqs
 CLOUDBASE_PACKAGE_COLLECTION=packages
 CLOUDBASE_LEAD_COLLECTION=leads
 CLOUDBASE_CHAT_COLLECTION=chat_messages
+CLOUDBASE_CHAT_SESSION_COLLECTION=chat_sessions
 CLOUDBASE_UNANSWERED_COLLECTION=unanswered_questions
 FEISHU_BOT_WEBHOOK=你的飞书群机器人 Webhook
 ADMIN_API_TOKEN=线索管理后台访问令牌
@@ -157,14 +158,16 @@ ARK_MODEL=你的模型接入点 ID
 
 模型密钥只能配置在 CloudBase HTTP 云函数环境变量中，不能放进抖音小程序、静态管理后台或 GitHub。
 
-聊天接口会先根据当前问题和最近对话，对 FAQ、套餐做轻量相关性检索，只把最相关的最多 3 条 FAQ 和 2 个套餐发送给模型。简单问候、FAQ 和套餐问题优先使用规则回复，只有复杂问题或带联系方式的业务咨询才调用模型。模型被要求只能基于相关门店资料回答，并主动推荐、追问和识别客户意向；模型未配置、超时、报错或返回 `NEED_HUMAN` 时，自动回退到规则回复。为适配 CloudBase HTTP 云函数 15 秒上限，AI 请求默认最多等待 6 秒，代码会将环境变量中的上限限制在 7 秒以内。
+聊天接口会先恢复 `chat_sessions` 中的会话状态，再根据当前问题和历史对 FAQ、套餐做轻量相关性检索，只把最相关的最多 3 条 FAQ 和 2 个套餐发送给模型。普通咨询优先调用模型，模型未配置、超时、报错或返回 `NEED_HUMAN` 时，自动回退到规则回复。用户明确提出预约时进入确定性预约工作流：服务端会结合已保存的目的地、日期、同行人数、预算和联系方式继续追问或提交线索，不依赖模型决定是否登记。为适配 CloudBase HTTP 云函数 15 秒上限，AI 请求默认最多等待 6 秒，代码会将环境变量中的上限限制在 7 秒以内。
+
+请在 CloudBase 数据库中创建 `chat_sessions` 集合。聊天接口会自动创建或更新会话文档，保存最近对话和结构化字段（服务类型、目的地、意向日期、同行人数、预算、联系方式、当前待补字段）。如果不创建该集合，聊天仍可运行，但页面重进后无法从服务端恢复上下文。
 
 小程序聊天请求可额外传入：
 
 ```json
 {
   "studioId": "demo-studio",
-  "sessionId": "douyin-demo-001",
+    "sessionId": "douyin-demo-001",
   "message": "两个人拍婚纱照多少钱？",
   "history": [
     {
@@ -176,6 +179,26 @@ ARK_MODEL=你的模型接入点 ID
       "content": "目前有轻奢婚纱照套餐，价格 ¥3999 起。"
     }
   ]
+}
+```
+
+聊天响应会返回会话诊断信息，便于确认上下文是否保存：
+
+```json
+{
+  "answerSource": "workflow",
+  "matchType": "booking",
+  "session": {
+    "stored": true,
+    "historyCount": 8,
+    "state": {
+      "serviceType": "旅拍",
+      "destination": "西安",
+      "preferredDate": "十月份",
+      "groupSize": "2人",
+      "pendingField": "contact"
+    }
+  }
 }
 ```
 
