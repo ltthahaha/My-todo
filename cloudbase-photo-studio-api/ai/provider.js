@@ -74,6 +74,106 @@ function parseJsonObject(text) {
   }
 }
 
+function decodeJsonString(value) {
+  try {
+    return asString(JSON.parse(`"${value}"`));
+  } catch {
+    return asString(value)
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "\r")
+      .replace(/\\t/g, "\t")
+      .replace(/\\\\/g, "\\");
+  }
+}
+
+function extractStringField(text, field) {
+  const pattern = new RegExp(
+    `"${field}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`
+  );
+  const match = asString(text).match(pattern);
+  return match ? decodeJsonString(match[1]).slice(0, 500) : "";
+}
+
+function extractObjectField(text, field) {
+  const source = asString(text);
+  const marker = `"${field}"`;
+  const start = source.indexOf(marker);
+
+  if (start < 0) {
+    return null;
+  }
+
+  const objectStart = source.indexOf("{", start + marker.length);
+
+  if (objectStart < 0) {
+    return null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = objectStart; index < source.length; index += 1) {
+    const character = source[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+    } else if (character === "{") {
+      depth += 1;
+    } else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          return JSON.parse(source.slice(objectStart, index + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function recoverStructuredReply(text) {
+  const reply = extractStringField(text, "reply");
+
+  if (!reply) {
+    return null;
+  }
+
+  return {
+    text: reply,
+    structured: true,
+    recovered: true,
+    intent: extractStringField(text, "intent") || "other",
+    leadStage: extractStringField(text, "leadStage") || "none",
+    lead: cleanLead(
+      extractObjectField(text, "lead") ||
+      extractObjectField(text, "leadInfo")
+    ),
+    followUpQuestion: extractStringField(text, "followUpQuestion")
+  };
+}
+
+function looksLikeStructuredPayload(text) {
+  return /["'](?:reply|intent|leadStage|lead|followUpQuestion)["']\s*:/.test(
+    asString(text)
+  );
+}
+
 function cleanLead(value) {
   const source = value && typeof value === "object" ? value : {};
   const fields = ["serviceType", "budget", "preferredDate", "name", "contact"];
@@ -86,7 +186,9 @@ function cleanLead(value) {
 
 function parseReply(text) {
   const parsed = parseJsonObject(text);
-  const reply = asString(parsed && parsed.reply);
+  const recovered = parsed ? null : recoverStructuredReply(text);
+  const source = parsed || recovered;
+  const reply = asString(source && source.reply) || asString(source && source.text);
   const intents = new Set([
     "wedding_photo",
     "travel_photo",
@@ -104,20 +206,29 @@ function parseReply(text) {
   if (reply) {
     return {
       text: reply,
-      structured: true,
-      intent: intents.has(asString(parsed.intent)) ? parsed.intent : "other",
-      leadStage: stages.has(asString(parsed.leadStage)) ? parsed.leadStage : "none",
-      lead: cleanLead(parsed.lead),
-      followUpQuestion: asString(parsed.followUpQuestion).slice(0, 240)
+      structured: Boolean(parsed || recovered),
+      recovered: Boolean(recovered),
+      intent: intents.has(asString(source.intent)) ? source.intent : "other",
+      leadStage: stages.has(asString(source.leadStage)) ? source.leadStage : "none",
+      lead: cleanLead(source.lead),
+      followUpQuestion: asString(source.followUpQuestion).slice(0, 240)
     };
   }
 
-  const plainText = asString(text);
+  const plainText = asString(text)
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
+
+  if (/^\s*[{[]/.test(plainText) || looksLikeStructuredPayload(plainText)) {
+    return null;
+  }
 
   return plainText
     ? {
       text: plainText,
       structured: false,
+      recovered: false,
       intent: "other",
       leadStage: "none",
       lead: cleanLead(null),
