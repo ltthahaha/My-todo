@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const fallbackFaq = require("./data/faq.json");
 const fallbackPackages = require("./data/packages.json");
 const { generateReply, getAvailability } = require("./ai/provider");
+const { retrieveKnowledge } = require("./ai/retrieval");
 
 const app = express();
 const port = Number(process.env.PORT || 9000);
@@ -669,6 +670,7 @@ app.get("/api/photo-studio/admin/stats", requireAdmin, async (req, res) => {
       packageListChats,
       aiAnsweredChats,
       aiFallbackChats,
+      highIntentChats,
       totalUnanswered,
       openUnanswered
     ] = await Promise.all([
@@ -684,6 +686,7 @@ app.get("/api/photo-studio/admin/stats", requireAdmin, async (req, res) => {
       countDocuments(chatCollection, { studioId, matchType: "package_list" }),
       countDocuments(chatCollection, { studioId, aiUsed: true }),
       countDocuments(chatCollection, { studioId, aiEnabled: true, aiUsed: false }),
+      countDocuments(chatCollection, { studioId, aiLeadStage: "high_intent" }),
       countDocuments(unansweredCollection, { studioId }),
       countDocuments(unansweredCollection, { studioId, status: "open" })
     ]);
@@ -708,6 +711,7 @@ app.get("/api/photo-studio/admin/stats", requireAdmin, async (req, res) => {
         packageListChats,
         aiAnsweredChats,
         aiFallbackChats,
+        highIntentChats,
         totalUnanswered,
         openUnanswered,
         conversionRate
@@ -1156,19 +1160,28 @@ app.post("/api/photo-studio/chat", async (req, res) => {
           ? matchedFaq.answer
           : "这个问题目前需要门店顾问确认。你可以留下联系方式和意向日期，我们会尽快联系你。";
     const aiAvailability = getAvailability();
+    const knowledge = retrieveKnowledge({
+      message,
+      history,
+      faqs,
+      packages
+    });
     const aiResult = aiAvailability.enabled
       ? await generateReply({
         message,
         history,
-        faqs,
-        packages
+        faqs: knowledge.faqs,
+        packages: knowledge.packages
       })
       : null;
     const aiUsed = Boolean(aiResult && aiResult.text);
     const matchType = aiUsed && baseMatchType === "none" ? "ai" : baseMatchType;
     const reply = aiUsed ? aiResult.text : fallbackReply;
     const needHuman = matchType === "none";
-    const leadIntent = /预约|档期|价格|多少钱|租|定金|联系|咨询|拍摄/.test(message);
+    const leadIntent = Boolean(
+      (aiResult && ["interested", "high_intent"].includes(aiResult.leadStage)) ||
+      /预约|档期|价格|多少钱|租|定金|联系|咨询|拍摄/.test(message)
+    );
 
     const chatLog = await saveChatMessage({
       studioId,
@@ -1184,6 +1197,12 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       aiFallback: Boolean(aiAvailability.enabled && !aiUsed),
       aiProvider: aiUsed ? aiResult.provider : null,
       aiLatencyMs: aiResult && aiResult.latencyMs ? aiResult.latencyMs : null,
+      aiStructured: Boolean(aiUsed && aiResult.structured),
+      aiIntent: aiUsed ? aiResult.intent : null,
+      aiLeadStage: aiUsed ? aiResult.leadStage : null,
+      aiLead: aiUsed ? aiResult.lead : null,
+      aiFollowUpQuestion: aiUsed ? aiResult.followUpQuestion : null,
+      knowledgeContext: knowledge.context,
       source: "douyin-miniapp",
       createdAt: new Date()
     });
@@ -1226,7 +1245,13 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         used: aiUsed,
         fallback: Boolean(aiAvailability.enabled && !aiUsed),
         provider: aiUsed ? aiResult.provider : null,
-        latencyMs: aiResult && aiResult.latencyMs ? aiResult.latencyMs : null
+        latencyMs: aiResult && aiResult.latencyMs ? aiResult.latencyMs : null,
+        structured: Boolean(aiUsed && aiResult.structured),
+        intent: aiUsed ? aiResult.intent : null,
+        leadStage: aiUsed ? aiResult.leadStage : null,
+        lead: aiUsed ? aiResult.lead : null,
+        followUpQuestion: aiUsed ? aiResult.followUpQuestion : null,
+        knowledgeContext: knowledge.context
       }
     });
   } catch (error) {

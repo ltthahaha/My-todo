@@ -157,7 +157,7 @@ ARK_MODEL=你的模型接入点 ID
 
 模型密钥只能配置在 CloudBase HTTP 云函数环境变量中，不能放进抖音小程序、静态管理后台或 GitHub。
 
-聊天接口会把当前用户问题、最近最多 6 条对话、FAQ 和套餐资料发送给模型。模型被要求只能基于门店资料回答；模型未配置、超时、报错或返回 `NEED_HUMAN` 时，自动回退到现有 FAQ/套餐规则回复。
+聊天接口会先根据当前问题和最近对话，对 FAQ、套餐做轻量相关性检索，只把最相关的最多 4 条 FAQ 和 3 个套餐发送给模型。模型被要求只能基于相关门店资料回答，并主动推荐、追问和识别客户意向；模型未配置、超时、报错或返回 `NEED_HUMAN` 时，自动回退到现有 FAQ/套餐规则回复。
 
 小程序聊天请求可额外传入：
 
@@ -179,7 +179,7 @@ ARK_MODEL=你的模型接入点 ID
 }
 ```
 
-响应中的 `ai` 字段用于测试和监控：
+响应中的 `ai` 字段用于测试和监控。AI 成功时还会返回意图、线索阶段和提取到的客户信息：
 
 ```json
 {
@@ -188,11 +188,22 @@ ARK_MODEL=你的模型接入点 ID
   "used": true,
   "fallback": false,
   "provider": "volcengine",
-  "latencyMs": 820
+  "latencyMs": 820,
+  "structured": true,
+  "intent": "price_consultation",
+  "leadStage": "interested",
+  "lead": {
+    "serviceType": "婚纱照",
+    "budget": "5000",
+    "preferredDate": "",
+    "name": "",
+    "contact": ""
+  },
+  "followUpQuestion": "你预计什么时候拍摄呢？"
 }
 ```
 
-聊天记录会增加 `aiEnabled`、`aiUsed`、`aiFallback`、`aiProvider` 和 `aiLatencyMs` 字段。运营统计接口会返回 `aiAnsweredChats` 和 `aiFallbackChats`。
+聊天记录会增加 `aiEnabled`、`aiUsed`、`aiFallback`、`aiProvider`、`aiLatencyMs`、`aiIntent`、`aiLeadStage`、`aiLead`、`aiFollowUpQuestion` 和 `knowledgeContext` 字段。运营统计接口会返回 `aiAnsweredChats`、`aiFallbackChats` 和 `highIntentChats`。
 
 建议先使用 50 个真实问题做灰度测试，重点检查价格、套餐内容、档期、定金和退款等问题，确认回答准确后再面向全部用户开启。
 

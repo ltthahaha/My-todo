@@ -24,7 +24,7 @@ function getConfig() {
       20000
     ),
     maxTokens: Math.min(
-      Math.max(Number(process.env.AI_MAX_TOKENS) || 300, 80),
+      Math.max(Number(process.env.AI_MAX_TOKENS) || 450, 120),
       800
     )
   };
@@ -56,6 +56,76 @@ function extractText(data) {
   return asString(content);
 }
 
+function parseJsonObject(text) {
+  const trimmed = asString(text)
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "");
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+
+  if (start < 0 || end <= start) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(trimmed.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+function cleanLead(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const fields = ["serviceType", "budget", "preferredDate", "name", "contact"];
+
+  return fields.reduce((lead, field) => {
+    lead[field] = asString(source[field]).slice(0, 120);
+    return lead;
+  }, {});
+}
+
+function parseReply(text) {
+  const parsed = parseJsonObject(text);
+  const reply = asString(parsed && parsed.reply);
+  const intents = new Set([
+    "wedding_photo",
+    "travel_photo",
+    "family_photo",
+    "dress_rental",
+    "package_consultation",
+    "price_consultation",
+    "booking",
+    "delivery",
+    "store_info",
+    "other"
+  ]);
+  const stages = new Set(["none", "exploring", "interested", "high_intent"]);
+
+  if (reply) {
+    return {
+      text: reply,
+      structured: true,
+      intent: intents.has(asString(parsed.intent)) ? parsed.intent : "other",
+      leadStage: stages.has(asString(parsed.leadStage)) ? parsed.leadStage : "none",
+      lead: cleanLead(parsed.lead),
+      followUpQuestion: asString(parsed.followUpQuestion).slice(0, 240)
+    };
+  }
+
+  const plainText = asString(text);
+
+  return plainText
+    ? {
+      text: plainText,
+      structured: false,
+      intent: "other",
+      leadStage: "none",
+      lead: cleanLead(null),
+      followUpQuestion: ""
+    }
+    : null;
+}
+
 async function generateReply({ message, history, faqs, packages }) {
   const config = getConfig();
 
@@ -84,7 +154,7 @@ async function generateReply({ message, history, faqs, packages }) {
       body: JSON.stringify({
         model: config.model,
         messages: buildMessages({ message, history, faqs, packages }),
-        temperature: 0.2,
+        temperature: 0.35,
         max_tokens: config.maxTokens
       }),
       signal: controller.signal
@@ -99,18 +169,18 @@ async function generateReply({ message, history, faqs, packages }) {
       );
     }
 
-    const text = extractText(data);
+    const result = parseReply(extractText(data));
 
-    if (!text || text.trim() === "NEED_HUMAN") {
+    if (!result || result.text === "NEED_HUMAN") {
       return {
         unavailable: true,
-        reason: text ? "AI requested human review" : "AI returned an empty reply",
+        reason: result ? "AI requested human review" : "AI returned an empty reply",
         latencyMs: Date.now() - startedAt
       };
     }
 
     return {
-      text: text.trim(),
+      ...result,
       provider: config.provider,
       model: config.model,
       latencyMs: Date.now() - startedAt
