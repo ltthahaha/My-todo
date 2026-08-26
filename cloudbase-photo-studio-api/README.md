@@ -12,6 +12,8 @@ POST /api/photo-studio/leads
 POST /api/photo-studio/auth/login
 GET  /api/photo-studio/admin/leads
 PATCH /api/photo-studio/admin/leads/:leadId
+GET  /api/photo-studio/admin/customers
+GET  /api/photo-studio/admin/customers/:customerKey
 GET  /api/photo-studio/admin/stats
 GET  /api/photo-studio/admin/unanswered
 PATCH /api/photo-studio/admin/unanswered/:questionId

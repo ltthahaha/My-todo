@@ -1554,6 +1554,272 @@ app.patch("/api/photo-studio/admin/leads/:leadId", requireAdmin, async (req, res
   }
 });
 
+function toTimestamp(value) {
+  if (!value) {
+    return 0;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function getCustomerKey(record) {
+  const userId = asString(record && record.userId);
+  const anonymousId = asString(record && record.anonymousId);
+  const sessionId = asString(record && record.sessionId);
+
+  return userId || anonymousId || sessionId || "";
+}
+
+function createCustomerSummary(record) {
+  const key = getCustomerKey(record);
+
+  return {
+    key,
+    userId: asString(record && record.userId),
+    anonymousId: asString(record && record.anonymousId),
+    isAuthenticated: Boolean(record && record.isAuthenticated),
+    sessionIds: new Set(),
+    name: "",
+    contact: "",
+    serviceType: "",
+    destination: "",
+    preferredDate: "",
+    budget: "",
+    groupSize: "",
+    status: "new",
+    staffNote: "",
+    lastMessage: "",
+    lastReply: "",
+    lastAnswerSource: "",
+    leadCount: 0,
+    chatCount: 0,
+    sessionCount: 0,
+    lastActiveAt: 0,
+    createdAt: 0
+  };
+}
+
+function touchCustomer(customer, record, type) {
+  const sessionId = asString(record.sessionId);
+  const state = record.sessionState && typeof record.sessionState === "object"
+    ? record.sessionState
+    : record.state && typeof record.state === "object"
+      ? record.state
+      : {};
+  const createdAt = toTimestamp(record.createdAt);
+  const updatedAt = toTimestamp(record.updatedAt);
+  const activeAt = Math.max(createdAt, updatedAt);
+
+  if (sessionId) {
+    customer.sessionIds.add(sessionId);
+  }
+
+  customer.userId = customer.userId || asString(record.userId);
+  customer.anonymousId = customer.anonymousId || asString(record.anonymousId);
+  customer.isAuthenticated = customer.isAuthenticated || Boolean(record.isAuthenticated);
+  customer.name = customer.name || asString(record.name);
+  customer.contact = customer.contact || asString(record.contact || state.contact);
+  customer.serviceType = customer.serviceType || asString(record.serviceType || state.serviceType);
+  customer.destination = customer.destination || asString(record.destination || state.destination);
+  customer.preferredDate = customer.preferredDate || asString(record.preferredDate || state.preferredDate);
+  customer.budget = customer.budget || asString(record.budget || state.budget);
+  customer.groupSize = customer.groupSize || asString(record.groupSize || state.groupSize);
+  customer.staffNote = customer.staffNote || asString(record.staffNote);
+
+  if (asString(record.status)) {
+    customer.status = record.status;
+  }
+
+  if (type === "lead") {
+    customer.leadCount += 1;
+  }
+
+  if (type === "chat") {
+    customer.chatCount += 1;
+    customer.lastMessage = asString(record.userMessage) || customer.lastMessage;
+    customer.lastReply = asString(record.reply) || customer.lastReply;
+    customer.lastAnswerSource = asString(record.answerSource) || customer.lastAnswerSource;
+  }
+
+  if (type === "session") {
+    customer.sessionCount += 1;
+    customer.lastMessage = asString(record.lastUserMessage) || customer.lastMessage;
+    customer.lastReply = asString(record.lastReply) || customer.lastReply;
+    customer.lastAnswerSource = asString(record.lastAnswerSource) || customer.lastAnswerSource;
+  }
+
+  customer.lastActiveAt = Math.max(customer.lastActiveAt, activeAt);
+  customer.createdAt = customer.createdAt
+    ? Math.min(customer.createdAt, createdAt || customer.createdAt)
+    : createdAt;
+}
+
+function buildCustomerList({ sessions, messages, leads }) {
+  const customers = new Map();
+
+  [
+    ...leads.map((record) => ({ record, type: "lead" })),
+    ...sessions.map((record) => ({ record, type: "session" })),
+    ...messages.map((record) => ({ record, type: "chat" }))
+  ].forEach(({ record, type }) => {
+    const key = getCustomerKey(record);
+
+    if (!key) {
+      return;
+    }
+
+    if (!customers.has(key)) {
+      customers.set(key, createCustomerSummary(record));
+    }
+
+    touchCustomer(customers.get(key), record, type);
+  });
+
+  return Array.from(customers.values())
+    .map((customer) => ({
+      ...customer,
+      sessionIds: Array.from(customer.sessionIds),
+      lastActiveAt: customer.lastActiveAt ? new Date(customer.lastActiveAt) : null,
+      createdAt: customer.createdAt ? new Date(customer.createdAt) : null
+    }))
+    .sort((a, b) => toTimestamp(b.lastActiveAt) - toTimestamp(a.lastActiveAt));
+}
+
+function buildCustomerFilter(studioId, customerKey) {
+  const key = asString(customerKey);
+  const filter = { studioId };
+
+  if (key.startsWith("douyin_")) {
+    filter.userId = key;
+  } else if (key.startsWith("anon-")) {
+    filter.anonymousId = key;
+  } else {
+    filter.sessionId = key;
+  }
+
+  return filter;
+}
+
+app.get("/api/photo-studio/admin/customers", requireAdmin, async (req, res) => {
+  const studioId = asString(req.query.studioId) || defaultStudioId;
+  const limit = Math.min(Math.max(Number(req.query.limit) || 80, 1), 200);
+  const db = getDatabase();
+
+  if (!db) {
+    res.status(503).json({
+      ok: false,
+      error: "CloudBase database is not configured"
+    });
+    return;
+  }
+
+  try {
+    const [sessionResult, messageResult, leadResult] = await Promise.all([
+      db.collection(chatSessionCollection)
+        .where({ studioId })
+        .orderBy("updatedAt", "desc")
+        .limit(limit)
+        .get(),
+      db.collection(chatCollection)
+        .where({ studioId })
+        .orderBy("createdAt", "desc")
+        .limit(limit * 3)
+        .get(),
+      db.collection(leadCollection)
+        .where({ studioId })
+        .orderBy("createdAt", "desc")
+        .limit(limit * 2)
+        .get()
+    ]);
+    const customers = buildCustomerList({
+      sessions: Array.isArray(sessionResult.data) ? sessionResult.data : [],
+      messages: Array.isArray(messageResult.data) ? messageResult.data : [],
+      leads: Array.isArray(leadResult.data) ? leadResult.data : []
+    }).slice(0, limit);
+
+    res.json({
+      ok: true,
+      studioId,
+      customers
+    });
+  } catch (error) {
+    console.error("Admin customer list failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Customer list failed"
+    });
+  }
+});
+
+app.get("/api/photo-studio/admin/customers/:customerKey", requireAdmin, async (req, res) => {
+  const studioId = asString(req.query.studioId) || defaultStudioId;
+  const customerKey = asString(req.params.customerKey);
+  const db = getDatabase();
+
+  if (!customerKey) {
+    res.status(400).json({
+      ok: false,
+      error: "Missing customer key"
+    });
+    return;
+  }
+
+  if (!db) {
+    res.status(503).json({
+      ok: false,
+      error: "CloudBase database is not configured"
+    });
+    return;
+  }
+
+  try {
+    const filter = buildCustomerFilter(studioId, customerKey);
+    const [sessionResult, messageResult, leadResult] = await Promise.all([
+      db.collection(chatSessionCollection)
+        .where(filter)
+        .orderBy("updatedAt", "desc")
+        .limit(20)
+        .get(),
+      db.collection(chatCollection)
+        .where(filter)
+        .orderBy("createdAt", "asc")
+        .limit(200)
+        .get(),
+      db.collection(leadCollection)
+        .where(filter)
+        .orderBy("createdAt", "desc")
+        .limit(50)
+        .get()
+    ]);
+    const sessions = Array.isArray(sessionResult.data) ? sessionResult.data : [];
+    const messages = Array.isArray(messageResult.data) ? messageResult.data : [];
+    const leads = Array.isArray(leadResult.data) ? leadResult.data : [];
+    const customer = buildCustomerList({ sessions, messages, leads })[0] || {
+      key: customerKey,
+      sessionIds: [],
+      leadCount: 0,
+      chatCount: 0,
+      sessionCount: 0
+    };
+
+    res.json({
+      ok: true,
+      studioId,
+      customer,
+      sessions,
+      messages,
+      leads
+    });
+  } catch (error) {
+    console.error("Admin customer detail failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Customer detail failed"
+    });
+  }
+});
+
 app.get("/api/photo-studio/admin/stats", requireAdmin, async (req, res) => {
   const studioId = asString(req.query.studioId) || defaultStudioId;
   const db = getDatabase();

@@ -275,6 +275,158 @@
       resize: vertical;
       font: inherit;
     }
+    .customer-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding: 14px 16px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .customer-workbench {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr) 320px;
+      gap: 16px;
+      min-height: 620px;
+    }
+    .customer-panel {
+      min-width: 0;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .customer-panel-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfd;
+    }
+    .customer-panel-header h2 { font-size: 18px; }
+    .customer-list {
+      max-height: 560px;
+      overflow: auto;
+    }
+    .customer-item {
+      width: 100%;
+      display: block;
+      min-height: 0;
+      padding: 14px 16px;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+      background: #fff;
+      color: var(--text);
+      text-align: left;
+      white-space: normal;
+    }
+    .customer-item:hover { background: #f7faff; filter: none; }
+    .customer-item.active {
+      background: #eef6ff;
+      box-shadow: inset 3px 0 0 var(--brand);
+    }
+    .customer-title-row,
+    .customer-meta-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+    }
+    .customer-title { font-weight: 700; overflow-wrap: anywhere; }
+    .customer-preview {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .customer-meta-row {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .chat-timeline {
+      display: grid;
+      gap: 12px;
+      max-height: 560px;
+      overflow: auto;
+      padding: 16px;
+      background: #f7f9fb;
+    }
+    .chat-pair {
+      display: grid;
+      gap: 8px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .chat-pair:last-child { border-bottom: 0; }
+    .chat-bubble {
+      max-width: 82%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      overflow-wrap: anywhere;
+    }
+    .chat-bubble.user {
+      justify-self: end;
+      background: #dff2ec;
+    }
+    .chat-bubble.bot {
+      justify-self: start;
+      background: #fff;
+      border: 1px solid var(--line);
+    }
+    .chat-meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .customer-detail {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+    .detail-group {
+      display: grid;
+      gap: 8px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .detail-group:last-child { border-bottom: 0; padding-bottom: 0; }
+    .detail-row {
+      display: grid;
+      grid-template-columns: 82px minmax(0, 1fr);
+      gap: 10px;
+    }
+    .detail-label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .detail-value { overflow-wrap: anywhere; }
+    .lead-card {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+    .lead-card-actions {
+      display: grid;
+      gap: 8px;
+    }
+    .lead-card-actions textarea {
+      width: 100%;
+      min-height: 72px;
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      resize: vertical;
+      font: inherit;
+    }
     @media (max-width: 720px) {
       main { width: min(100% - 20px, 1180px); margin: 16px auto; }
       header, .toolbar { display: block; }
@@ -287,6 +439,11 @@
       .analytics-actions { margin-top: 10px; }
       .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .question-controls { grid-template-columns: 1fr; }
+      .customer-toolbar { display: block; }
+      .customer-toolbar .filters { margin-top: 10px; }
+      .customer-workbench { grid-template-columns: 1fr; }
+      .customer-list, .chat-timeline { max-height: none; }
+      .chat-bubble { max-width: 92%; }
     }
     .modal-backdrop {
       position: fixed;
@@ -365,12 +522,58 @@
     </header>
 
     <nav class="tabs" aria-label="管理模块">
-      <button class="tab-button active" type="button" data-view="leadsView">线索管理</button>
+      <button class="tab-button active" type="button" data-view="customersView">客户工作台</button>
+      <button class="tab-button" type="button" data-view="leadsView">线索管理</button>
       <button class="tab-button" type="button" data-view="knowledgeView">知识库管理</button>
       <button class="tab-button" type="button" data-view="analyticsView">运营分析</button>
     </nav>
 
-    <section id="leadsView" class="view">
+    <section id="customersView" class="view">
+      <div class="customer-toolbar">
+        <div>
+          <h2>客户咨询工作台</h2>
+          <p class="subtitle">按客户聚合聊天记录、预约意向和跟进状态。</p>
+        </div>
+        <div class="filters">
+          <button id="refreshCustomersButton" type="button">刷新客户</button>
+          <span class="count" id="customerCount">尚未连接</span>
+        </div>
+      </div>
+
+      <div class="customer-workbench">
+        <aside class="customer-panel">
+          <div class="customer-panel-header">
+            <h2>客户列表</h2>
+            <p class="subtitle">优先显示最近咨询客户。</p>
+          </div>
+          <div id="customerList" class="customer-list">
+            <div class="empty">输入管理令牌后连接。</div>
+          </div>
+        </aside>
+
+        <section class="customer-panel">
+          <div class="customer-panel-header">
+            <h2 id="customerChatTitle">聊天记录</h2>
+            <p class="subtitle" id="customerChatSubtitle">选择左侧客户查看完整对话。</p>
+          </div>
+          <div id="customerChatTimeline" class="chat-timeline">
+            <div class="empty">请选择一个客户。</div>
+          </div>
+        </section>
+
+        <aside class="customer-panel">
+          <div class="customer-panel-header">
+            <h2>预约与跟进</h2>
+            <p class="subtitle">查看客户资料并更新线索状态。</p>
+          </div>
+          <div id="customerDetail" class="customer-detail">
+            <div class="empty">请选择一个客户。</div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="leadsView" class="view hidden">
       <div class="toolbar">
         <div class="filters">
           <label for="statusFilter">状态</label>
@@ -547,6 +750,9 @@
     let analyticsStats = null;
     let unansweredQuestions = [];
     let faqSourceQuestionId = "";
+    let customers = [];
+    let currentCustomerKey = "";
+    let currentCustomerDetail = null;
 
     const $ = (selector) => document.querySelector(selector);
     const tokenInput = $("#apiToken");
@@ -587,6 +793,156 @@
     function formatKnowledgeDate(value) {
       if (!value) return "尚未记录时间";
       return formatDate(value);
+    }
+
+    function getCustomerName(customer) {
+      if (!customer) return "未选择客户";
+      return customer.name ||
+        customer.contact ||
+        customer.userId ||
+        customer.anonymousId ||
+        customer.key ||
+        "匿名客户";
+    }
+
+    function getCustomerMeta(customer) {
+      const parts = [
+        customer.serviceType,
+        customer.destination,
+        customer.preferredDate,
+        customer.groupSize,
+        customer.budget
+      ].filter(Boolean);
+      return parts.length ? parts.join(" · ") : "暂无明确需求";
+    }
+
+    function renderCustomerList() {
+      const list = $("#customerList");
+
+      if (!customers.length) {
+        $("#customerCount").textContent = "0 位客户";
+        list.innerHTML = '<div class="empty">暂无客户咨询记录。</div>';
+        renderCustomerDetail(null);
+        return;
+      }
+
+      $("#customerCount").textContent = `${customers.length} 位客户`;
+      list.innerHTML = customers.map((customer) => {
+        const key = customer.key;
+        const status = statusLabels[customer.status] ? customer.status : "new";
+        const active = key === currentCustomerKey ? "active" : "";
+        return `
+          <button class="customer-item ${active}" type="button" data-customer-key="${escapeHtml(key)}">
+            <div class="customer-title-row">
+              <span class="customer-title">${escapeHtml(getCustomerName(customer))}</span>
+              <span class="status status-${status}">${statusLabels[status]}</span>
+            </div>
+            <div class="customer-preview">${escapeHtml(customer.lastMessage || customer.lastReply || "暂无对话摘要")}</div>
+            <div class="customer-meta-row">
+              <span>${escapeHtml(getCustomerMeta(customer))}</span>
+              <span>${escapeHtml(formatDate(customer.lastActiveAt))}</span>
+            </div>
+          </button>
+        `;
+      }).join("");
+
+      list.querySelectorAll(".customer-item").forEach((button) => {
+        button.addEventListener("click", () => loadCustomerDetail(button.dataset.customerKey));
+      });
+    }
+
+    function renderChatMessages(messages) {
+      const timeline = $("#customerChatTimeline");
+
+      if (!messages.length) {
+        timeline.innerHTML = '<div class="empty">该客户暂无聊天记录。</div>';
+        return;
+      }
+
+      timeline.innerHTML = messages.map((message) => `
+        <article class="chat-pair">
+          <div class="chat-bubble user">${escapeHtml(message.userMessage || "")}</div>
+          <div class="chat-bubble bot">${escapeHtml(message.reply || "")}</div>
+          <div class="chat-meta">
+            ${escapeHtml(formatDate(message.createdAt))}
+            ${message.answerSource ? ` · ${escapeHtml(message.answerSource)}` : ""}
+            ${message.matchType ? ` · ${escapeHtml(message.matchType)}` : ""}
+          </div>
+        </article>
+      `).join("");
+    }
+
+    function renderLeadCards(leadsForCustomer) {
+      if (!leadsForCustomer.length) {
+        return '<div class="lead-meta">暂无预约线索。客户明确预约或提交表单后会显示在这里。</div>';
+      }
+
+      return leadsForCustomer.map((lead) => {
+        const id = lead._id || lead.id;
+        const status = statusLabels[lead.status] ? lead.status : "new";
+        return `
+          <article class="lead-card" data-id="${escapeHtml(id)}">
+            <div class="customer-title-row">
+              <strong>${escapeHtml(lead.serviceType || "未填写服务")}</strong>
+              <span class="status status-${status}">${statusLabels[status]}</span>
+            </div>
+            <div class="lead-meta">联系方式：${escapeHtml(lead.contact || "-")}</div>
+            <div class="lead-meta">日期：${escapeHtml(lead.preferredDate || "未填写")} · 预算：${escapeHtml(lead.budget || "未填写")}</div>
+            <div class="lead-meta">${escapeHtml(lead.note || "")}</div>
+            <div class="lead-card-actions">
+              <select class="customer-lead-status" aria-label="线索状态">
+                ${Object.entries(statusLabels).map(([key, label]) => `<option value="${key}" ${key === status ? "selected" : ""}>${label}</option>`).join("")}
+              </select>
+              <textarea class="customer-lead-note" placeholder="内部备注">${escapeHtml(lead.staffNote || "")}</textarea>
+              <button class="customer-lead-save primary" type="button">保存跟进</button>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderCustomerDetail(detail) {
+      const customer = detail && detail.customer;
+      const messages = detail && Array.isArray(detail.messages) ? detail.messages : [];
+      const leadsForCustomer = detail && Array.isArray(detail.leads) ? detail.leads : [];
+      const detailNode = $("#customerDetail");
+
+      if (!customer) {
+        $("#customerChatTitle").textContent = "聊天记录";
+        $("#customerChatSubtitle").textContent = "选择左侧客户查看完整对话。";
+        $("#customerChatTimeline").innerHTML = '<div class="empty">请选择一个客户。</div>';
+        detailNode.innerHTML = '<div class="empty">请选择一个客户。</div>';
+        return;
+      }
+
+      $("#customerChatTitle").textContent = getCustomerName(customer);
+      $("#customerChatSubtitle").textContent = getCustomerMeta(customer);
+      renderChatMessages(messages);
+      detailNode.innerHTML = `
+        <section class="detail-group">
+          <div class="detail-row"><span class="detail-label">用户ID</span><span class="detail-value">${escapeHtml(customer.userId || "未登录")}</span></div>
+          <div class="detail-row"><span class="detail-label">匿名ID</span><span class="detail-value">${escapeHtml(customer.anonymousId || "-")}</span></div>
+          <div class="detail-row"><span class="detail-label">会话数</span><span class="detail-value">${Number(customer.sessionCount || 0)} 个</span></div>
+          <div class="detail-row"><span class="detail-label">咨询数</span><span class="detail-value">${Number(customer.chatCount || 0)} 次</span></div>
+          <div class="detail-row"><span class="detail-label">最近活跃</span><span class="detail-value">${escapeHtml(formatDate(customer.lastActiveAt))}</span></div>
+        </section>
+        <section class="detail-group">
+          <div class="detail-row"><span class="detail-label">联系方式</span><span class="detail-value">${escapeHtml(customer.contact || "未填写")}</span></div>
+          <div class="detail-row"><span class="detail-label">服务</span><span class="detail-value">${escapeHtml(customer.serviceType || "未明确")}</span></div>
+          <div class="detail-row"><span class="detail-label">目的地</span><span class="detail-value">${escapeHtml(customer.destination || "-")}</span></div>
+          <div class="detail-row"><span class="detail-label">日期</span><span class="detail-value">${escapeHtml(customer.preferredDate || "-")}</span></div>
+          <div class="detail-row"><span class="detail-label">预算</span><span class="detail-value">${escapeHtml(customer.budget || "-")}</span></div>
+          <div class="detail-row"><span class="detail-label">人数</span><span class="detail-value">${escapeHtml(customer.groupSize || "-")}</span></div>
+        </section>
+        <section class="detail-group">
+          <h2>预约线索</h2>
+          ${renderLeadCards(leadsForCustomer)}
+        </section>
+      `;
+
+      detailNode.querySelectorAll(".customer-lead-save").forEach((button) => {
+        button.addEventListener("click", () => updateCustomerLead(button.closest("[data-id]")));
+      });
     }
 
     async function request(path, options = {}) {
@@ -687,6 +1043,62 @@
         $("#count").textContent = "连接失败";
       } finally {
         $("#refreshButton").disabled = false;
+      }
+    }
+
+    async function loadCustomers() {
+      if (!apiToken) {
+        $("#customerCount").textContent = "尚未连接";
+        return;
+      }
+
+      $("#refreshCustomersButton").disabled = true;
+      try {
+        const query = new URLSearchParams({
+          studioId: STUDIO_ID,
+          limit: "80"
+        });
+        const data = await request(`/api/photo-studio/admin/customers?${query}`);
+        customers = Array.isArray(data.customers) ? data.customers : [];
+        currentCustomerKey = currentCustomerKey ||
+          (customers[0] && customers[0].key) ||
+          "";
+        renderCustomerList();
+
+        if (currentCustomerKey) {
+          await loadCustomerDetail(currentCustomerKey, { keepList: true });
+        } else {
+          renderCustomerDetail(null);
+        }
+      } catch (error) {
+        $("#customerCount").textContent = "连接失败";
+        $("#customerList").innerHTML = `<div class="error">${escapeHtml(error instanceof TypeError ? "浏览器无法访问接口，请检查 CloudBase 跨域设置。" : error.message)}</div>`;
+        renderCustomerDetail(null);
+      } finally {
+        $("#refreshCustomersButton").disabled = false;
+      }
+    }
+
+    async function loadCustomerDetail(customerKey, options = {}) {
+      if (!apiToken || !customerKey) return;
+
+      currentCustomerKey = customerKey;
+      if (!options.keepList) {
+        renderCustomerList();
+      }
+
+      $("#customerChatTimeline").innerHTML = '<div class="empty">正在加载聊天记录...</div>';
+      $("#customerDetail").innerHTML = '<div class="empty">正在加载客户资料...</div>';
+
+      try {
+        const query = new URLSearchParams({ studioId: STUDIO_ID });
+        const data = await request(`/api/photo-studio/admin/customers/${encodeURIComponent(customerKey)}?${query}`);
+        currentCustomerDetail = data;
+        renderCustomerDetail(data);
+      } catch (error) {
+        currentCustomerDetail = null;
+        $("#customerChatTimeline").innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`;
+        $("#customerDetail").innerHTML = '<div class="empty">客户资料加载失败。</div>';
       }
     }
 
@@ -1075,20 +1487,21 @@
       updatePackage(row, !current.enabled);
     }
 
-    async function updateLead(row) {
-      const id = row.dataset.id;
-      const button = row.querySelector(".save-button");
+    async function updateLeadRecord(id, status, staffNote, button) {
       button.disabled = true;
       try {
         await request(`/api/photo-studio/admin/leads/${encodeURIComponent(id)}`, {
           method: "PATCH",
           body: JSON.stringify({
-            status: row.querySelector(".status-select").value,
-            staffNote: row.querySelector(".note-input").value
+            status,
+            staffNote
           })
         });
         showToast("线索已更新");
-        await loadLeads();
+        await Promise.all([
+          loadLeads(),
+          loadCustomers()
+        ]);
       } catch (error) {
         showToast(error.message);
       } finally {
@@ -1096,14 +1509,38 @@
       }
     }
 
+    async function updateLead(row) {
+      await updateLeadRecord(
+        row.dataset.id,
+        row.querySelector(".status-select").value,
+        row.querySelector(".note-input").value,
+        row.querySelector(".save-button")
+      );
+    }
+
+    async function updateCustomerLead(row) {
+      await updateLeadRecord(
+        row.dataset.id,
+        row.querySelector(".customer-lead-status").value,
+        row.querySelector(".customer-lead-note").value,
+        row.querySelector(".customer-lead-save")
+      );
+
+      if (currentCustomerKey) {
+        await loadCustomerDetail(currentCustomerKey, { keepList: true });
+      }
+    }
+
     $("#authForm").addEventListener("submit", (event) => {
       event.preventDefault();
       apiToken = tokenInput.value.trim();
       sessionStorage.setItem("photoStudioAdminToken", apiToken);
+      loadCustomers();
       loadLeads();
       loadKnowledge();
       loadAnalytics();
     });
+    $("#refreshCustomersButton").addEventListener("click", loadCustomers);
     $("#refreshButton").addEventListener("click", loadLeads);
     statusFilter.addEventListener("change", loadLeads);
     document.querySelectorAll(".tab-button").forEach((button) => {
@@ -1112,6 +1549,7 @@
         document.querySelectorAll(".view").forEach((view) => view.classList.add("hidden"));
         button.classList.add("active");
         $(`#${button.dataset.view}`).classList.remove("hidden");
+        if (button.dataset.view === "customersView") loadCustomers();
         if (button.dataset.view === "knowledgeView") loadKnowledge();
         if (button.dataset.view === "analyticsView") loadAnalytics();
       });
@@ -1137,6 +1575,7 @@
       }
     });
     if (apiToken) {
+      loadCustomers();
       loadLeads();
       loadKnowledge();
       loadAnalytics();
