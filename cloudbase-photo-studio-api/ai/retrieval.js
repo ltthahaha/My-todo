@@ -33,6 +33,20 @@ function scoreText(query, terms, weight) {
   }, 0);
 }
 
+function serviceMatches(service, category) {
+  const normalizedService = normalize(service);
+  const normalizedCategory = normalize(category);
+
+  return Boolean(
+    normalizedService &&
+    normalizedCategory &&
+    (
+      normalizedService.includes(normalizedCategory) ||
+      normalizedCategory.includes(normalizedService)
+    )
+  );
+}
+
 function rankRecords(records, getScore, limit) {
   return records
     .map((record) => ({ record, score: getScore(record) }))
@@ -42,8 +56,9 @@ function rankRecords(records, getScore, limit) {
     .map((item) => item.record);
 }
 
-function retrieveKnowledge({ message, history, faqs, packages }) {
+function retrieveKnowledge({ message, history, faqs, packages, serviceType }) {
   const context = normalize(`${getRecentUserContext(history)} ${message}`);
+  const service = normalize(serviceType);
   const priceIntent = /价格|多少钱|预算|费用|报价|贵不贵|便宜|价位/.test(context);
   const bookingIntent = /预约|档期|日期|时间|周末|下个月|今天|明天|定金|改期/.test(context);
   const packageIntent = /套餐|包含|内容|推荐|适合|怎么选/.test(context);
@@ -52,6 +67,7 @@ function retrieveKnowledge({ message, history, faqs, packages }) {
     let score = 0;
     score += scoreText(context, faq.keywords || [], 10);
     score += scoreText(context, [faq.category], 6);
+    score += serviceMatches(service, faq.category) ? 8 : 0;
 
     if (bookingIntent && /预约|档期|定金|改期|时间/.test(`${faq.category} ${(faq.keywords || []).join(" ")}`)) {
       score += 8;
@@ -70,6 +86,7 @@ function retrieveKnowledge({ message, history, faqs, packages }) {
     score += scoreText(context, [item.category], 8);
     score += scoreText(context, item.items || [], 4);
     score += scoreText(context, [item.description], 2);
+    score += serviceMatches(service, item.category) ? 10 : 0;
 
     if (priceIntent) {
       score += 8;

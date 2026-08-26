@@ -9,24 +9,23 @@
       <view class="online-mark"><view class="status-dot"></view>在线</view>
     </view>
 
-    <scroll-view class="message-list" scroll-y="true" scroll-into-view="bottom-anchor">
+    <scroll-view class="message-list" scroll-y="true" scroll-into-view="{{scrollIntoView}}">
       <block tt:for="{{messages}}" tt:key="index">
-        <view class="message {{item.role}}">
+        <view id="message-{{index}}" class="message {{item.role}}">
           <view class="bubble">{{item.text}}</view>
         </view>
       </block>
-      <view id="bottom-anchor"></view>
     </scroll-view>
 
     <view class="quick-list">
       <block tt:for="{{quickQuestions}}" tt:key="*this">
-        <button class="quick-button" data-question="{{item}}" bindtap="askQuick">{{item}}</button>
+        <button class="quick-button" disabled="{{isSending}}" data-question="{{item}}" bindtap="askQuick">{{item}}</button>
       </block>
     </view>
 
     <view class="input-row">
       <input class="input" value="{{inputValue}}" bindinput="onInput" placeholder="输入你的问题" confirm-type="send" bindconfirm="sendMessage" />
-      <button class="send-button" bindtap="sendMessage">发送</button>
+      <button class="send-button" disabled="{{isSending}}" bindtap="sendMessage">发送</button>
     </view>
   </view>
 

@@ -124,6 +124,11 @@
   line-height: 1.4;
 }
 
+.quick-button[disabled],
+.send-button[disabled] {
+  opacity: 0.55;
+}
+
 .input-row {
   display: flex;
   gap: 8px;

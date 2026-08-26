@@ -1465,24 +1465,25 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     );
     const { faqs, packages } = knowledge;
     const serviceContext = serviceType || serviceKey;
-    const contextualMessage = serviceContext
-      ? `${serviceContext} ${message}`
-      : message;
-    const conversationText = getConversationText(contextualMessage, history);
+    const userConversationText = getConversationText(message, history);
+    const conversationText = serviceContext
+      ? `${serviceContext} ${userConversationText}`
+      : userConversationText;
     const greeting = isGreetingMessage(message);
     const contact = extractContact(conversationText);
-    const matchedFaq = findFaq(contextualMessage, faqs);
-    const matchedPackage = findPackage(contextualMessage, packages);
-    const packageIntent = /套餐|价格|多少钱|预算|包含|内容|费用/.test(contextualMessage);
-    const listPackageIntent = /有哪些|什么套餐|套餐列表|套餐介绍/.test(contextualMessage);
+    const matchedFaq = findFaq(message, faqs);
+    const matchedPackage = findPackage(message, packages);
+    const packageIntent = /套餐|价格|多少钱|预算|包含|内容|费用/.test(message);
+    const listPackageIntent = /有哪些|什么套餐|套餐列表|套餐介绍/.test(message);
     const specificPackageMention = matchedPackage && (
       packageIntent ||
-      contextualMessage.toLowerCase().includes(matchedPackage.name.toLowerCase())
+      message.toLowerCase().includes(matchedPackage.name.toLowerCase())
     );
     const usePackageReply = Boolean(matchedPackage && specificPackageMention);
     const usePackageListReply = Boolean(
       !usePackageReply &&
-      (listPackageIntent || (packageIntent && packages.length && !matchedFaq))
+      !matchedFaq &&
+      (listPackageIntent || (packageIntent && packages.length))
     );
     const baseMatchType = usePackageReply
       ? "package"
@@ -1504,10 +1505,11 @@ app.post("/api/photo-studio/chat", async (req, res) => {
             : "我可以帮你了解婚纱照、旅拍、亲子照、婚纱租赁和套餐价格。你想了解哪一项呢？";
     const aiAvailability = getAvailability();
     const retrievedKnowledge = retrieveKnowledge({
-      message: contextualMessage,
+      message,
       history,
       faqs,
-      packages
+      packages,
+      serviceType: serviceContext
     });
     const shouldUseAi = Boolean(
       aiAvailability.enabled &&
@@ -1515,15 +1517,17 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     );
     const aiResult = shouldUseAi
       ? await generateReply({
-        message: contextualMessage,
+        message,
         history,
         faqs: retrievedKnowledge.faqs,
-        packages: retrievedKnowledge.packages
+        packages: retrievedKnowledge.packages,
+        serviceType: serviceContext
       })
       : null;
     const aiAttempted = Boolean(shouldUseAi);
     const aiUsed = Boolean(aiResult && aiResult.text);
-    const matchType = aiUsed && baseMatchType === "none" ? "ai" : baseMatchType;
+    const answerSource = aiUsed ? "ai" : baseMatchType;
+    const matchType = answerSource;
     let reply = aiUsed ? aiResult.text : fallbackReply;
     const effectiveAiResult = mergeExtractedLead(
       aiUsed ? aiResult : null,
@@ -1608,7 +1612,9 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         aiEnabled: aiAvailability.enabled,
         aiUsed,
         aiFallback: Boolean(aiAttempted && !aiUsed),
+        aiFallbackReason: aiResult && aiResult.reason ? aiResult.reason : null,
         aiSkipped: Boolean(aiAvailability.enabled && !aiAttempted),
+        answerSource,
         aiProvider: aiUsed ? aiResult.provider : null,
         aiLatencyMs: aiResult && aiResult.latencyMs ? aiResult.latencyMs : null,
         aiStructured: Boolean(aiUsed && aiResult.structured),
@@ -1666,6 +1672,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       reply,
       matchedFaqId: matchedFaq ? matchedFaq.id : null,
       matchedPackageId: usePackageReply ? matchedPackage.id : null,
+      answerSource,
       matchType,
       needHuman,
       leadIntent,
@@ -1686,6 +1693,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         configured: aiAvailability.configured,
         used: aiUsed,
         fallback: Boolean(aiAttempted && !aiUsed),
+        fallbackReason: aiResult && aiResult.reason ? aiResult.reason : null,
         skipped: Boolean(aiAvailability.enabled && !aiAttempted),
         reason: aiResult && aiResult.reason ? aiResult.reason : null,
         provider: aiUsed ? aiResult.provider : null,

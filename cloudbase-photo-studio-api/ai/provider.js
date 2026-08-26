@@ -237,7 +237,7 @@ function parseReply(text) {
     : null;
 }
 
-async function generateReply({ message, history, faqs, packages }) {
+async function generateReply({ message, history, faqs, packages, serviceType }) {
   const config = getConfig();
 
   if (!config.enabled) {
@@ -264,7 +264,13 @@ async function generateReply({ message, history, faqs, packages }) {
       },
       body: JSON.stringify({
         model: config.model,
-        messages: buildMessages({ message, history, faqs, packages }),
+        messages: buildMessages({
+          message,
+          history,
+          faqs,
+          packages,
+          serviceType
+        }),
         temperature: 0.35,
         max_tokens: config.maxTokens
       }),
