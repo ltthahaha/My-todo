@@ -15,7 +15,13 @@ const leadCollection = process.env.CLOUDBASE_LEAD_COLLECTION || "leads";
 const chatCollection = process.env.CLOUDBASE_CHAT_COLLECTION || "chat_messages";
 const chatSessionCollection = process.env.CLOUDBASE_CHAT_SESSION_COLLECTION || "chat_sessions";
 const unansweredCollection = process.env.CLOUDBASE_UNANSWERED_COLLECTION || "unanswered_questions";
+const douyinUserCollection = process.env.CLOUDBASE_DOUYIN_USER_COLLECTION || "douyin_users";
 const adminApiToken = asString(process.env.ADMIN_API_TOKEN);
+const douyinAuthTokenSecret = asString(
+  process.env.DOUYIN_AUTH_TOKEN_SECRET ||
+    process.env.AUTH_TOKEN_SECRET ||
+    process.env.ADMIN_API_TOKEN
+);
 const chatOperationTimeouts = {
   knowledge: 1800,
   chatSessionRead: 700,
@@ -45,6 +51,42 @@ app.use((req, res, next) => {
 
 function asString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(asString(value)).digest("hex");
+}
+
+function signUserToken(studioId, userId) {
+  if (!douyinAuthTokenSecret || !userId) {
+    return "";
+  }
+
+  return crypto
+    .createHmac("sha256", douyinAuthTokenSecret)
+    .update(`${studioId}:${userId}`)
+    .digest("hex");
+}
+
+function verifyRequestUser(source, studioId) {
+  const body = source && typeof source === "object" ? source : {};
+  const userId = asString(body.userId);
+  const userToken = asString(body.userToken);
+  const anonymousId = asString(body.anonymousId).slice(0, 120);
+
+  if (userId && userToken && signUserToken(studioId, userId) === userToken) {
+    return {
+      userId,
+      anonymousId,
+      isAuthenticated: true
+    };
+  }
+
+  return {
+    userId: "",
+    anonymousId,
+    isAuthenticated: false
+  };
 }
 
 function withTimeout(task, timeoutMs, fallback) {
@@ -120,6 +162,113 @@ function requireAdmin(req, res, next) {
   }
 
   next();
+}
+
+function getDouyinConfig() {
+  return {
+    appId: asString(process.env.DOUYIN_APP_ID || process.env.TT_APP_ID),
+    appSecret: asString(process.env.DOUYIN_APP_SECRET || process.env.TT_APP_SECRET),
+    code2SessionUrl: asString(process.env.DOUYIN_CODE2SESSION_URL) ||
+      "https://developer.toutiao.com/api/apps/v2/jscode2session"
+  };
+}
+
+async function exchangeDouyinCode(code) {
+  const config = getDouyinConfig();
+
+  if (!config.appId || !config.appSecret) {
+    return {
+      ok: false,
+      configured: false,
+      reason: "Douyin app credentials are not configured"
+    };
+  }
+
+  const response = await fetch(config.code2SessionUrl, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      appid: config.appId,
+      secret: config.appSecret,
+      code
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  const payload = data.data && typeof data.data === "object" ? data.data : data;
+  const openid = asString(payload.openid || payload.open_id);
+  const unionid = asString(payload.unionid || payload.union_id);
+  const errorCode = data.err_no || data.errcode || data.error || payload.err_no || payload.errcode;
+  const errorMessage = asString(data.err_tips || data.errmsg || data.message || payload.err_tips || payload.errmsg);
+
+  if (!response.ok || !openid) {
+    return {
+      ok: false,
+      configured: true,
+      status: response.status,
+      reason: errorMessage || String(errorCode || "Douyin login failed")
+    };
+  }
+
+  return {
+    ok: true,
+    configured: true,
+    openid,
+    unionid,
+    rawErrorCode: errorCode || null
+  };
+}
+
+async function saveDouyinUser(user) {
+  const db = getDatabase();
+
+  if (!db || !user.userId) {
+    return {
+      stored: false,
+      reason: "CloudBase database is not configured"
+    };
+  }
+
+  try {
+    const existing = await db.collection(douyinUserCollection)
+      .where({
+        studioId: user.studioId,
+        userId: user.userId
+      })
+      .limit(1)
+      .get();
+    const previous = Array.isArray(existing.data) ? existing.data[0] : null;
+    const now = new Date();
+    const record = {
+      ...user,
+      updatedAt: now,
+      createdAt: previous && previous.createdAt ? previous.createdAt : now
+    };
+
+    if (previous && previous._id) {
+      await db.collection(douyinUserCollection).doc(previous._id).update(record);
+      return {
+        stored: true,
+        id: previous._id,
+        updated: true
+      };
+    }
+
+    const result = await db.collection(douyinUserCollection).add(record);
+    return {
+      stored: true,
+      id: result.id || result._id || null,
+      updated: false
+    };
+  } catch (error) {
+    console.error("CloudBase Douyin user write failed", error);
+    return {
+      stored: false,
+      reason: error.message || "Douyin user write failed"
+    };
+  }
 }
 
 function getDatabase() {
@@ -692,6 +841,9 @@ function normalizeSessionState(value) {
   return {
     sessionId: asString(source.sessionId),
     studioId: asString(source.studioId),
+    userId: asString(source.userId),
+    anonymousId: asString(source.anonymousId),
+    isAuthenticated: Boolean(source.isAuthenticated),
     serviceKey: asString(source.serviceKey),
     serviceType: asString(source.serviceType),
     intent: asString(source.intent),
@@ -937,6 +1089,7 @@ function hasLeadContact(lead) {
 async function captureAiLead({
   studioId,
   sessionId,
+  user,
   message,
   aiResult,
   leadIntent
@@ -996,6 +1149,9 @@ async function captureAiLead({
     const lead = {
       studioId,
       sessionId,
+      userId: user && user.userId ? user.userId : "",
+      anonymousId: user && user.anonymousId ? user.anonymousId : "",
+      isAuthenticated: Boolean(user && user.isAuthenticated),
       name: aiLead.name,
       contact: aiLead.contact,
       serviceType: aiLead.serviceType,
@@ -1032,6 +1188,7 @@ async function captureAiLead({
 async function captureBookingLead({
   studioId,
   sessionId,
+  user,
   sessionState,
   message
 }) {
@@ -1089,6 +1246,9 @@ async function captureBookingLead({
     const lead = {
       studioId,
       sessionId,
+      userId: user && user.userId ? user.userId : "",
+      anonymousId: user && user.anonymousId ? user.anonymousId : "",
+      isAuthenticated: Boolean(user && user.isAuthenticated),
       name: state.name,
       contact,
       serviceType: state.serviceType,
@@ -1198,12 +1358,73 @@ app.get("/health", (req, res) => {
         leads: leadCollection,
         chatMessages: chatCollection,
         chatSessions: chatSessionCollection,
-        unansweredQuestions: unansweredCollection
+        unansweredQuestions: unansweredCollection,
+        douyinUsers: douyinUserCollection
       }
+    },
+    douyinAuth: {
+      configured: Boolean(getDouyinConfig().appId && getDouyinConfig().appSecret),
+      tokenConfigured: Boolean(douyinAuthTokenSecret)
     },
     ai: getAvailability(),
     timestamp: new Date().toISOString()
   });
+});
+
+app.post("/api/photo-studio/auth/login", async (req, res) => {
+  const code = asString(req.body.code);
+  const studioId = asString(req.body.studioId) || defaultStudioId;
+  const anonymousId = asString(req.body.anonymousId).slice(0, 120);
+
+  if (!code) {
+    res.status(400).json({
+      ok: false,
+      error: "Missing code"
+    });
+    return;
+  }
+
+  try {
+    const loginResult = await exchangeDouyinCode(code);
+
+    if (!loginResult.ok) {
+      res.status(loginResult.configured ? 502 : 503).json({
+        ok: false,
+        error: loginResult.reason || "Douyin login failed",
+        configured: loginResult.configured
+      });
+      return;
+    }
+
+    const userId = `douyin_${sha256(loginResult.openid).slice(0, 32)}`;
+    const user = {
+      studioId,
+      userId,
+      openid: loginResult.openid,
+      unionid: loginResult.unionid || "",
+      anonymousId,
+      platform: "douyin-miniapp"
+    };
+    const storage = await saveDouyinUser(user);
+
+    res.json({
+      ok: true,
+      user: {
+        userId,
+        anonymousId,
+        platform: user.platform,
+        isAuthenticated: true
+      },
+      userToken: signUserToken(studioId, userId),
+      storage
+    });
+  } catch (error) {
+    console.error("Douyin auth login failed", error);
+    res.status(502).json({
+      ok: false,
+      error: error.message || "Douyin login failed"
+    });
+  }
 });
 
 app.get("/api/photo-studio/knowledge", async (req, res) => {
@@ -1816,6 +2037,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
   const studioId = asString(req.body.studioId) || defaultStudioId;
   const history = Array.isArray(req.body.history) ? req.body.history : [];
   const conversationId = sessionId || `session-${Date.now()}`;
+  const requestUser = verifyRequestUser(req.body, studioId);
 
   if (!message) {
     res.status(400).json({
@@ -1855,6 +2077,10 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         ...(storedSession || {}),
         sessionId: conversationId,
         studioId,
+        userId: requestUser.userId || (storedSession && storedSession.userId),
+        anonymousId: requestUser.anonymousId || (storedSession && storedSession.anonymousId),
+        isAuthenticated: requestUser.isAuthenticated ||
+          Boolean(storedSession && storedSession.isAuthenticated),
         serviceKey: serviceKey || (storedSession && storedSession.serviceKey),
         serviceType: serviceContext
       },
@@ -1927,6 +2153,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       bookingLead = await captureBookingLead({
         studioId,
         sessionId: conversationId,
+        user: requestUser,
         sessionState,
         message
       });
@@ -1987,6 +2214,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         () => captureAiLead({
           studioId,
           sessionId: conversationId,
+          user: requestUser,
           message,
           aiResult: effectiveAiResult,
           leadIntent
@@ -2063,6 +2291,9 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       () => saveChatMessage({
         studioId,
         sessionId: conversationId,
+        userId: sessionState.userId || "",
+        anonymousId: sessionState.anonymousId || "",
+        isAuthenticated: Boolean(sessionState.isAuthenticated),
         userMessage: message,
         reply,
         matchedFaqId: matchedFaq ? matchedFaq.id : null,
@@ -2098,6 +2329,9 @@ app.post("/api/photo-studio/chat", async (req, res) => {
           groupSize: sessionState.groupSize,
           budget: sessionState.budget,
           contact: sessionState.contact,
+          userId: sessionState.userId,
+          anonymousId: sessionState.anonymousId,
+          isAuthenticated: sessionState.isAuthenticated,
           pendingField: sessionState.pendingField
         },
         sessionStored: sessionStorage.stored,
@@ -2150,6 +2384,11 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       needHuman,
       leadIntent,
       sessionId: conversationId,
+      user: {
+        userId: sessionState.userId || "",
+        anonymousId: sessionState.anonymousId || "",
+        isAuthenticated: Boolean(sessionState.isAuthenticated)
+      },
       session: {
         stored: sessionStorage.stored,
         id: sessionStorage.id || null,
@@ -2162,6 +2401,9 @@ app.post("/api/photo-studio/chat", async (req, res) => {
           groupSize: sessionState.groupSize,
           budget: sessionState.budget,
           contact: sessionState.contact,
+          userId: sessionState.userId,
+          anonymousId: sessionState.anonymousId,
+          isAuthenticated: sessionState.isAuthenticated,
           pendingField: sessionState.pendingField
         }
       },
@@ -2206,8 +2448,13 @@ app.post("/api/photo-studio/chat", async (req, res) => {
 });
 
 app.post("/api/photo-studio/leads", async (req, res) => {
+  const studioId = asString(req.body.studioId) || defaultStudioId;
+  const requestUser = verifyRequestUser(req.body, studioId);
   const lead = {
-    studioId: asString(req.body.studioId) || defaultStudioId,
+    studioId,
+    userId: requestUser.userId,
+    anonymousId: requestUser.anonymousId,
+    isAuthenticated: requestUser.isAuthenticated,
     name: asString(req.body.name),
     contact: asString(req.body.contact),
     serviceType: asString(req.body.serviceType),

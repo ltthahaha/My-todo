@@ -9,6 +9,7 @@ GET  /health
 GET  /api/photo-studio/knowledge
 POST /api/photo-studio/chat
 POST /api/photo-studio/leads
+POST /api/photo-studio/auth/login
 GET  /api/photo-studio/admin/leads
 PATCH /api/photo-studio/admin/leads/:leadId
 GET  /api/photo-studio/admin/stats
@@ -66,6 +67,10 @@ CLOUDBASE_LEAD_COLLECTION=leads
 CLOUDBASE_CHAT_COLLECTION=chat_messages
 CLOUDBASE_CHAT_SESSION_COLLECTION=chat_sessions
 CLOUDBASE_UNANSWERED_COLLECTION=unanswered_questions
+CLOUDBASE_DOUYIN_USER_COLLECTION=douyin_users
+DOUYIN_APP_ID=tt428a3437dcf0288901
+DOUYIN_APP_SECRET=抖音小程序 AppSecret
+DOUYIN_AUTH_TOKEN_SECRET=用于签发小程序用户 token 的随机密钥
 FEISHU_BOT_WEBHOOK=你的飞书群机器人 Webhook
 ADMIN_API_TOKEN=线索管理后台访问令牌
 AI_ENABLED=false
@@ -80,6 +85,24 @@ AI_MAX_TOKENS=240
 HTTP 云函数需要显式配置服务端鉴权。推荐在 CloudBase 的 API Key 管理中创建服务端 API Key，然后在云函数环境变量中配置 `CLOUDBASE_APIKEY`。
 
 也可以使用腾讯云 `SecretId` 和 `SecretKey`，配置 `CLOUDBASE_SECRET_ID`、`CLOUDBASE_SECRET_KEY`。密钥只能放在 CloudBase 服务端环境变量中，不能提交到 GitHub，也不能放进抖音小程序。
+
+### 抖音用户身份
+
+小程序端会调用 `tt.login()` 获取临时 `code`，再请求：
+
+```text
+POST /api/photo-studio/auth/login
+```
+
+服务端使用 `DOUYIN_APP_ID` 和 `DOUYIN_APP_SECRET` 换取抖音 `openid`，生成内部 `userId` 和签名 `userToken`。后续 `/chat` 和 `/leads` 请求会自动携带 `userId`、`userToken`、`anonymousId`，数据库中的 `chat_sessions`、`chat_messages`、`leads` 会写入这些字段。
+
+CloudBase 需要额外创建集合：
+
+```text
+douyin_users
+```
+
+`DOUYIN_AUTH_TOKEN_SECRET` 建议填写一段 32 位以上随机字符串。如果不配置，会回退使用 `ADMIN_API_TOKEN`，但正式环境建议单独配置。
 
 部署后先访问 `/health`，确认：
 
