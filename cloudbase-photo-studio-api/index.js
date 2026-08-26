@@ -211,11 +211,17 @@ function verifyPassword(password, passwordHash) {
     return false;
   }
 
-  const actual = crypto
-    .pbkdf2Sync(asString(password), salt, iterations, 32, "sha256")
-    .toString("hex");
+  const saltInputs = /^[0-9a-f]+$/i.test(salt) && salt.length % 2 === 0
+    ? [Buffer.from(salt, "hex"), salt]
+    : [salt];
 
-  return safeEqual(expected, actual);
+  return saltInputs.some((saltInput) => {
+    const actual = crypto
+      .pbkdf2Sync(asString(password), saltInput, iterations, 32, "sha256")
+      .toString("hex");
+
+    return safeEqual(expected, actual);
+  });
 }
 
 function withTimeout(task, timeoutMs, fallback) {

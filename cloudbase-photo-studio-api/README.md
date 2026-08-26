@@ -137,8 +137,17 @@ admin_users
 在 PowerShell 中生成 `passwordHash`：
 
 ```powershell
-node -e 'const crypto=require("crypto"); const password=process.argv[1]; const salt=crypto.randomBytes(16).toString("hex"); const hash=crypto.pbkdf2Sync(password,salt,120000,32,"sha256").toString("hex"); console.log("pbkdf2$120000$"+salt+"$"+hash)' "你的登录密码"
+$password = "你的登录密码"
+$saltBytes = New-Object byte[] 16
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($saltBytes)
+$salt = -join ($saltBytes | ForEach-Object { "{0:x2}" -f $_ })
+$pbkdf2 = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($password, $saltBytes, 120000, "SHA256")
+$hashBytes = $pbkdf2.GetBytes(32)
+$hash = -join ($hashBytes | ForEach-Object { "{0:x2}" -f $_ })
+"pbkdf2`$120000`$$salt`$$hash"
 ```
+
+输出必须包含四段：`pbkdf2`、迭代次数、32 位 salt、64 位 hash。最后一段 hash 不能为空。
 
 后台登录成功后，前端会保存短期 session token 到当前浏览器标签页的 `sessionStorage`，后续请求使用：
 
