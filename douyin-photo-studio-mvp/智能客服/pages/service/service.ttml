@@ -1,19 +1,42 @@
 <view class="page">
-  <view class="header-card">
-    <view class="eyebrow">映白摄影</view>
-    <view class="title">{{title}}</view>
-    <view class="description">{{description}}</view>
+  <view class="service-hero {{service.accent}}">
+    <view class="service-hero-top">
+      <view class="service-icon">{{service.icon}}</view>
+      <view class="service-tag">{{service.tag}}</view>
+      <view class="price-hint">{{service.priceHint}}</view>
+    </view>
+    <view class="eyebrow">映白摄影 · 服务介绍</view>
+    <view class="title">{{service.title}}</view>
+    <view class="description">{{service.detailDescription}}</view>
   </view>
 
-  <view class="section-heading">你可能想了解</view>
-  <view class="question-list">
-    <block tt:for="{{questions}}" tt:key="*this">
-      <view class="question-card" data-question="{{item}}" bindtap="askQuestion">
+  <view class="audience-note">
+    <view class="audience-label">适合</view>
+    <view class="audience-text">{{service.audience}}</view>
+  </view>
+
+  <view class="section-heading">服务亮点</view>
+  <view class="highlight-list">
+    <block tt:for="{{service.highlights}}" tt:key="*this">
+      <view class="highlight-item">
+        <view class="highlight-check">✓</view>
         <view>{{item}}</view>
-        <view class="arrow">›</view>
       </view>
     </block>
   </view>
 
-  <button class="primary-button" bindtap="openLead">填写预约意向</button>
+  <view class="section-heading question-heading">你可能想了解</view>
+  <view class="question-list">
+    <block tt:for="{{service.questions}}" tt:key="*this">
+      <view class="question-card" data-service="{{serviceKey}}" data-question="{{item}}" bindtap="askQuestion">
+        <view>{{item}}</view>
+        <view class="arrow">→</view>
+      </view>
+    </block>
+  </view>
+
+  <view class="action-row">
+    <button class="primary-button" bindtap="startChat">开始咨询</button>
+    <button class="secondary-button" bindtap="openLead">填写预约意向</button>
+  </view>
 </view>

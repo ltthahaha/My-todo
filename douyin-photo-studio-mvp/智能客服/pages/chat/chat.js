@@ -1,6 +1,16 @@
 const api = require("../../services/api")
+const { getService } = require("../../services/catalog")
 
 const fallbackAnswer = "这个问题我还不能确定。你可以填写预约意向，由门店顾问进一步确认。"
+const generalService = {
+  key: "general",
+  title: "智能客服",
+  shortTitle: "在线咨询",
+  icon: "问",
+  tag: "全品类咨询",
+  description: "套餐、价格、预约、出片和租赁问题",
+  questions: ["婚纱照多少钱？", "亲子照多久出片？", "可以租婚纱吗？", "怎么预约档期？"]
+}
 
 const knowledgeBase = [
   {
@@ -28,6 +38,8 @@ const knowledgeBase = [
 Page({
   data: {
     sessionId: "",
+    serviceKey: "general",
+    service: generalService,
     messages: [
       {
         role: "bot",
@@ -35,20 +47,29 @@ Page({
       }
     ],
     inputValue: "",
-    quickQuestions: ["婚纱照多少钱？", "亲子照多久出片？", "可以租婚纱吗？", "怎么预约档期？"]
+    quickQuestions: generalService.questions
   },
 
   onLoad: function (options) {
-    this.setData({
-      sessionId: `douyin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    })
+    const current = options.type ? getService(options.type) : generalService
+    const welcomeText = current.key === "general"
+      ? "你好，我是映白摄影智能客服。你可以咨询套餐、价格、服装、出片时间和预约流程。"
+      : `你好，我可以帮你了解${current.title}的套餐、价格和预约安排。你想先了解哪一项呢？`
 
-    if (options.question) {
-      const question = decodeURIComponent(options.question)
-      this.setData({ inputValue: question }, () => {
-        this.sendMessage()
-      })
-    }
+    this.setData({
+      sessionId: `douyin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      serviceKey: current.key,
+      service: current,
+      messages: [{ role: "bot", text: welcomeText }],
+      quickQuestions: current.questions
+    }, () => {
+      if (options.question) {
+        const question = decodeURIComponent(options.question)
+        this.setData({ inputValue: question }, () => {
+          this.sendMessage()
+        })
+      }
+    })
   },
 
   onInput: function (event) {
@@ -56,10 +77,12 @@ Page({
   },
 
   askQuick: function (event) {
+    const question = event.currentTarget.dataset.question
     this.setData({
-      inputValue: event.currentTarget.dataset.question
+      inputValue: question
+    }, () => {
+      this.sendMessage()
     })
-    this.sendMessage()
   },
 
   sendMessage: function () {
@@ -86,6 +109,10 @@ Page({
     api.chat({
       studioId: "demo-studio",
       sessionId: this.data.sessionId,
+      serviceKey: this.data.serviceKey,
+      serviceType: this.data.service.title === "智能客服"
+        ? ""
+        : this.data.service.title,
       message: question,
       history
     }).then((response) => {
@@ -107,8 +134,11 @@ Page({
   },
 
   openLead: function () {
+    const typeQuery = this.data.serviceKey === "general"
+      ? ""
+      : `?type=${this.data.serviceKey}`
     tt.navigateTo({
-      url: "/pages/lead/lead"
+      url: `/pages/lead/lead${typeQuery}`
     })
   }
 })

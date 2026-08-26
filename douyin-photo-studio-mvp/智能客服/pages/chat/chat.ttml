@@ -1,5 +1,14 @@
 <view class="page">
   <view class="chat-card">
+    <view class="chat-header">
+      <view class="chat-avatar">{{service.icon}}</view>
+      <view class="chat-header-copy">
+        <view class="chat-title">{{service.title}}</view>
+        <view class="chat-subtitle">{{service.description}}</view>
+      </view>
+      <view class="online-mark"><view class="status-dot"></view>在线</view>
+    </view>
+
     <scroll-view class="message-list" scroll-y="true" scroll-into-view="bottom-anchor">
       <block tt:for="{{messages}}" tt:key="index">
         <view class="message {{item.role}}">
@@ -21,5 +30,5 @@
     </view>
   </view>
 
-  <button class="lead-button" bindtap="openLead">留下预约意向，转人工顾问</button>
+  <button class="lead-button" bindtap="openLead">留下预约意向 <text class="lead-arrow">→</text></button>
 </view>

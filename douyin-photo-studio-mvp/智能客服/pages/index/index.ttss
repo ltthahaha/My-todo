@@ -1,122 +1,240 @@
 .page {
   min-height: 100vh;
-  padding: 24px 20px 40px;
+  box-sizing: border-box;
+  padding: 20px 18px 40px;
+  background: #f6f7f6;
 }
 
 .hero {
-  padding: 28px 22px;
-  border-radius: 20px;
-  background: linear-gradient(135deg, #eaf3ff, #f8fbff);
+  padding: 24px 22px 22px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #e4f0eb, #f4f8f5);
+  box-shadow: 0 8px 24px rgba(52, 84, 73, 0.08);
+}
+
+.hero-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .eyebrow,
 .section-note {
-  color: #5d88bd;
+  color: #6a8178;
   font-size: 12px;
 }
 
+.hero-status {
+  display: flex;
+  align-items: center;
+  color: #5c7a6e;
+  font-size: 11px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: #6db08d;
+}
+
 .title {
-  margin-top: 14px;
-  color: #172334;
-  font-size: 28px;
+  margin-top: 22px;
+  color: #26352f;
+  font-size: 27px;
   font-weight: 700;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .subtitle {
   margin-top: 12px;
-  color: #667384;
+  color: #687872;
   font-size: 14px;
   line-height: 1.65;
 }
 
 .primary-button {
-  margin: 22px 0 0;
-  background: #5f9df7;
+  margin: 20px 0 0;
+  background: #5e9180;
   color: #fff;
   font-size: 15px;
+}
+
+.button-arrow {
+  margin-left: 5px;
+  font-size: 18px;
 }
 
 .section-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 28px 2px 12px;
+  margin: 28px 2px 14px;
 }
 
 .section-heading {
-  color: #20262e;
+  color: #26312d;
   font-size: 18px;
   font-weight: 700;
+}
+
+.section-subtitle {
+  margin-top: 4px;
+  color: #89948f;
+  font-size: 12px;
 }
 
 .service-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .service-card {
+  padding: 16px;
+  border: 1px solid rgba(42, 57, 51, 0.06);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 5px 18px rgba(37, 53, 46, 0.05);
+}
+
+.service-card.rose {
+  border-left: 4px solid #d99a9c;
+}
+
+.service-card.sky {
+  border-left: 4px solid #83b2cc;
+}
+
+.service-card.mint {
+  border-left: 4px solid #81b39c;
+}
+
+.service-card.lavender {
+  border-left: 4px solid #a99bc5;
+}
+
+.service-card-top {
   display: flex;
   align-items: center;
-  padding: 15px;
-  border: 1px solid #e4e9ef;
-  border-radius: 16px;
-  background: #fff;
 }
 
 .service-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
-  background: #edf5ff;
-  color: #4d8fe8;
+  width: 38px;
+  height: 38px;
+  border-radius: 13px;
+  background: #f0f5f2;
+  color: #5e9180;
   font-size: 16px;
   font-weight: 700;
 }
 
+.rose .service-icon {
+  background: #fbefef;
+  color: #b36f75;
+}
+
+.sky .service-icon {
+  background: #edf6fa;
+  color: #5d91aa;
+}
+
+.mint .service-icon {
+  background: #edf7f0;
+  color: #5c9575;
+}
+
+.lavender .service-icon {
+  background: #f3f0f8;
+  color: #8574a8;
+}
+
+.service-tag {
+  margin-left: 10px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f4f6f5;
+  color: #7c8882;
+  font-size: 11px;
+}
+
+.arrow {
+  margin-left: auto;
+  color: #9da9a3;
+  font-size: 20px;
+}
+
 .service-copy {
-  flex: 1;
-  margin-left: 12px;
+  margin-top: 13px;
 }
 
 .service-title {
-  color: #20262e;
+  color: #26312d;
   font-size: 15px;
   font-weight: 700;
 }
 
 .service-description {
   margin-top: 4px;
-  color: #7b8794;
+  color: #7c8882;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.service-meta {
+  display: flex;
+  align-items: center;
+  margin-top: 14px;
+  color: #5e9180;
   font-size: 12px;
 }
 
-.arrow {
-  margin-left: 8px;
-  color: #9aa7b5;
-  font-size: 24px;
+.meta-separator {
+  margin: 0 7px;
+  color: #c1cac5;
 }
 
 .trust-note {
+  display: flex;
+  align-items: flex-start;
   margin-top: 18px;
-  padding: 14px;
-  border-radius: 14px;
-  background: #fff;
+  padding: 14px 15px;
+  border: 1px solid #e5ebe7;
+  border-radius: 16px;
+  background: #fbfcfb;
+}
+
+.trust-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e5f3eb;
+  color: #4f936f;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.trust-copy {
+  flex: 1;
+  margin-left: 10px;
 }
 
 .trust-title {
-  color: #3d8d61;
+  color: #48695a;
   font-size: 13px;
   font-weight: 700;
 }
 
 .trust-text {
   margin-top: 5px;
-  color: #7b8794;
+  color: #89948f;
   font-size: 12px;
   line-height: 1.55;
 }

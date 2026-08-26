@@ -1,31 +1,48 @@
 <view class="page">
   <view class="hero">
-    <view class="eyebrow">{{studioName}} · 官方小程序</view>
-    <view class="title">拍摄前有问题？<br />先问智能客服</view>
-    <view class="subtitle">快速了解套餐、价格、服装、出片时间和预约流程。</view>
-    <button class="primary-button" bindtap="goChat">开始咨询</button>
+    <view class="hero-topline">
+      <view class="eyebrow">{{studioName}}</view>
+      <view class="hero-status"><view class="status-dot"></view>在线咨询</view>
+    </view>
+    <view class="title">把重要时刻，<br />交给专业记录</view>
+    <view class="subtitle">套餐、价格、服装、出片和预约问题，先和我聊聊。</view>
+    <button class="primary-button" bindtap="goChat">开始咨询 <text class="button-arrow">→</text></button>
   </view>
 
   <view class="section-title">
-    <view class="section-heading">选择你想了解的服务</view>
-    <view class="section-note">在线咨询</view>
+    <view>
+      <view class="section-heading">选择拍摄服务</view>
+      <view class="section-subtitle">每个服务都有专属咨询内容</view>
+    </view>
+    <view class="section-note">4 项服务</view>
   </view>
 
   <view class="service-list">
     <block tt:for="{{services}}" tt:key="key">
-      <view class="service-card" data-service="{{item.key}}" bindtap="goService">
-        <view class="service-icon">{{item.icon}}</view>
+      <view class="service-card {{item.accent}}" data-service="{{item.key}}" bindtap="goService">
+        <view class="service-card-top">
+          <view class="service-icon">{{item.icon}}</view>
+          <view class="service-tag">{{item.tag}}</view>
+          <view class="arrow">→</view>
+        </view>
         <view class="service-copy">
           <view class="service-title">{{item.title}}</view>
           <view class="service-description">{{item.description}}</view>
         </view>
-        <view class="arrow">›</view>
+        <view class="service-meta">
+          <view>{{item.priceHint}}</view>
+          <view class="meta-separator">·</view>
+          <view>查看详情</view>
+        </view>
       </view>
     </block>
   </view>
 
   <view class="trust-note">
-    <view class="trust-title">不确定的问题会转人工</view>
-    <view class="trust-text">客服只根据门店已确认的套餐和规则回答，避免给你错误承诺。</view>
+    <view class="trust-icon">✓</view>
+    <view class="trust-copy">
+      <view class="trust-title">信息透明，咨询更安心</view>
+      <view class="trust-text">客服只根据门店已确认的套餐和规则回答，不确定的问题会转给顾问。</view>
+    </view>
   </view>
 </view>

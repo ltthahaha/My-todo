@@ -1442,6 +1442,8 @@ app.patch("/api/photo-studio/admin/knowledge/packages/:packageId", requireAdmin,
 
 app.post("/api/photo-studio/chat", async (req, res) => {
   const message = asString(req.body.message);
+  const serviceKey = asString(req.body.serviceKey);
+  const serviceType = asString(req.body.serviceType);
   const sessionId = asString(req.body.sessionId);
   const studioId = asString(req.body.studioId) || defaultStudioId;
   const history = Array.isArray(req.body.history) ? req.body.history : [];
@@ -1462,16 +1464,20 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       getFallbackKnowledge()
     );
     const { faqs, packages } = knowledge;
-    const conversationText = getConversationText(message, history);
+    const serviceContext = serviceType || serviceKey;
+    const contextualMessage = serviceContext
+      ? `${serviceContext} ${message}`
+      : message;
+    const conversationText = getConversationText(contextualMessage, history);
     const greeting = isGreetingMessage(message);
     const contact = extractContact(conversationText);
-    const matchedFaq = findFaq(message, faqs);
-    const matchedPackage = findPackage(message, packages);
-    const packageIntent = /套餐|价格|多少钱|预算|包含|内容|费用/.test(message);
-    const listPackageIntent = /有哪些|什么套餐|套餐列表|套餐介绍/.test(message);
+    const matchedFaq = findFaq(contextualMessage, faqs);
+    const matchedPackage = findPackage(contextualMessage, packages);
+    const packageIntent = /套餐|价格|多少钱|预算|包含|内容|费用/.test(contextualMessage);
+    const listPackageIntent = /有哪些|什么套餐|套餐列表|套餐介绍/.test(contextualMessage);
     const specificPackageMention = matchedPackage && (
       packageIntent ||
-      message.toLowerCase().includes(matchedPackage.name.toLowerCase())
+      contextualMessage.toLowerCase().includes(matchedPackage.name.toLowerCase())
     );
     const usePackageReply = Boolean(matchedPackage && specificPackageMention);
     const usePackageListReply = Boolean(
@@ -1498,7 +1504,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
             : "我可以帮你了解婚纱照、旅拍、亲子照、婚纱租赁和套餐价格。你想了解哪一项呢？";
     const aiAvailability = getAvailability();
     const retrievedKnowledge = retrieveKnowledge({
-      message,
+      message: contextualMessage,
       history,
       faqs,
       packages
@@ -1510,7 +1516,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     );
     const aiResult = shouldUseAi
       ? await generateReply({
-        message,
+        message: contextualMessage,
         history,
         faqs: retrievedKnowledge.faqs,
         packages: retrievedKnowledge.packages
@@ -1596,6 +1602,8 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         reply,
         matchedFaqId: matchedFaq ? matchedFaq.id : null,
         matchedPackageId: usePackageReply ? matchedPackage.id : null,
+        serviceKey: serviceKey || null,
+        serviceType: serviceType || null,
         matchType,
         needHuman,
         aiEnabled: aiAvailability.enabled,

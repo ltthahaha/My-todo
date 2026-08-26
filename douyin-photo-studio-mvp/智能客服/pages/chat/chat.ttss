@@ -1,24 +1,80 @@
 .page {
   min-height: 100vh;
-  padding: 16px;
+  box-sizing: border-box;
+  padding: 14px 14px 24px;
+  background: #f6f7f6;
 }
 
 .chat-card {
   overflow: hidden;
-  border: 1px solid #e4e9ef;
-  border-radius: 16px;
+  border: 1px solid #e4ebe7;
+  border-radius: 20px;
   background: #fff;
+  box-shadow: 0 6px 20px rgba(37, 53, 46, 0.05);
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  padding: 14px 15px;
+  border-bottom: 1px solid #edf1ef;
+  background: #fbfcfb;
+}
+
+.chat-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 13px;
+  background: #e5f1eb;
+  color: #5e9180;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.chat-header-copy {
+  flex: 1;
+  margin-left: 10px;
+}
+
+.chat-title {
+  color: #26312d;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.chat-subtitle {
+  margin-top: 3px;
+  color: #89948f;
+  font-size: 11px;
+}
+
+.online-mark {
+  display: flex;
+  align-items: center;
+  color: #5e9180;
+  font-size: 11px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: #6db08d;
 }
 
 .message-list {
-  height: 600px;
-  padding: 16px;
-  background: #f8fafc;
+  height: 540px;
+  padding: 16px 14px;
+  background: #f7f9f8;
 }
 
 .message {
   display: flex;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .message.user {
@@ -27,34 +83,36 @@
 
 .bubble {
   max-width: 78%;
-  padding: 10px 12px;
-  border-radius: 12px;
+  padding: 11px 13px;
+  border-radius: 15px 15px 15px 5px;
   background: #fff;
-  color: #303943;
+  color: #3a4741;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.65;
+  box-shadow: 0 2px 8px rgba(37, 53, 46, 0.04);
 }
 
 .message.user .bubble {
-  background: #5f9df7;
+  border-radius: 15px 15px 5px 15px;
+  background: #5e9180;
   color: #fff;
 }
 
 .quick-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px;
-  background: #f8fafc;
+  gap: 7px;
+  padding: 12px 14px 13px;
+  background: #f7f9f8;
 }
 
 .quick-button {
   margin: 0;
   padding: 6px 10px;
-  border: 1px solid #cfe0f8;
+  border: 1px solid #c9ded4;
   border-radius: 999px;
-  background: #edf5ff;
-  color: #4d8fe8;
+  background: #f5faf7;
+  color: #5e9180;
   font-size: 12px;
   line-height: 1.4;
 }
@@ -63,21 +121,23 @@
   display: flex;
   gap: 8px;
   padding: 12px;
-  border-top: 1px solid #e4e9ef;
+  border-top: 1px solid #e4ebe7;
+  background: #fff;
 }
 
 .input {
   flex: 1;
   height: 42px;
   padding: 0 12px;
-  border: 1px solid #e1e7ed;
+  border: 1px solid #dfe8e3;
   border-radius: 10px;
   background: #fff;
+  color: #3a4741;
 }
 
 .send-button,
 .lead-button {
-  background: #5f9df7;
+  background: #5e9180;
   color: #fff;
   font-size: 14px;
 }
@@ -88,5 +148,11 @@
 }
 
 .lead-button {
-  margin-top: 16px;
+  margin-top: 14px;
+  box-shadow: 0 5px 14px rgba(94, 145, 128, 0.16);
+}
+
+.lead-arrow {
+  margin-left: 4px;
+  font-size: 17px;
 }

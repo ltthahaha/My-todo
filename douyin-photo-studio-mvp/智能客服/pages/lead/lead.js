@@ -13,6 +13,23 @@ Page({
     submitted: false
   },
 
+  onLoad: function (options) {
+    const typeIndex = {
+      wedding: 0,
+      travel: 1,
+      family: 2,
+      dress: 3
+    }
+    const index = Object.prototype.hasOwnProperty.call(typeIndex, options.type)
+      ? typeIndex[options.type]
+      : 0
+
+    this.setData({
+      serviceIndex: index,
+      serviceType: this.data.serviceOptions[index]
+    })
+  },
+
   onInput: function (event) {
     const field = event.currentTarget.dataset.field
     this.setData({
