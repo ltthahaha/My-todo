@@ -16,13 +16,16 @@ const chatCollection = process.env.CLOUDBASE_CHAT_COLLECTION || "chat_messages";
 const unansweredCollection = process.env.CLOUDBASE_UNANSWERED_COLLECTION || "unanswered_questions";
 const adminApiToken = asString(process.env.ADMIN_API_TOKEN);
 const chatOperationTimeouts = {
+  knowledge: 1800,
   leadCapture: 1800,
   feishuNotification: 1000,
   chatLog: 1000,
   unanswered: 800
 };
+const knowledgeCacheTtlMs = 60 * 1000;
 
 let cloudbaseDb = null;
+const knowledgeCache = new Map();
 
 app.use(express.json({ limit: "256kb" }));
 
@@ -300,6 +303,43 @@ async function getPackages(studioId) {
   return data.map(normalizePackage).filter((item) => item.name && item.price);
 }
 
+function invalidateKnowledgeCache(studioId) {
+  if (studioId) {
+    knowledgeCache.delete(studioId);
+    return;
+  }
+
+  knowledgeCache.clear();
+}
+
+async function getKnowledge(studioId) {
+  const cached = knowledgeCache.get(studioId);
+
+  if (cached && Date.now() - cached.createdAt < knowledgeCacheTtlMs) {
+    return cached.value;
+  }
+
+  const [faqs, packages] = await Promise.all([
+    getFaqs(studioId),
+    getPackages(studioId)
+  ]);
+  const value = { faqs, packages };
+
+  knowledgeCache.set(studioId, {
+    createdAt: Date.now(),
+    value
+  });
+
+  return value;
+}
+
+function getFallbackKnowledge() {
+  return {
+    faqs: fallbackFaq.map(normalizeFaq).filter((item) => item.answer && item.enabled),
+    packages: fallbackPackages.map(normalizePackage).filter((item) => item.name && item.price)
+  };
+}
+
 function findFaq(message, faqs) {
   const normalized = message.toLowerCase();
 
@@ -335,6 +375,105 @@ function findPackage(message, packages) {
   }
 
   return bestMatch;
+}
+
+function isGreetingMessage(message) {
+  return /^(你好|您好|嗨|哈喽|hello|hi|hey|在吗|有人吗|早上好|下午好|晚上好)[！!。。，,\s~～]*$/i.test(
+    asString(message)
+  );
+}
+
+function extractContact(text) {
+  const source = asString(text);
+  const phone = source.match(/(?:\+?86[\s-]?)?(1[3-9]\d{9})(?!\d)/);
+
+  if (phone) {
+    return phone[1];
+  }
+
+  const wechat = source.match(
+    /(?:微信(?:号|联系)?|wx|wechat)\s*[:：]?\s*([a-zA-Z][-_a-zA-Z0-9]{4,30})/i
+  );
+
+  return wechat ? `微信:${wechat[1]}` : "";
+}
+
+function getConversationText(message, history) {
+  const recentUserMessages = Array.isArray(history)
+    ? history
+      .filter((item) => item && item.role === "user")
+      .slice(-6)
+      .map((item) => asString(item.content || item.text))
+      .filter(Boolean)
+    : [];
+
+  return [...recentUserMessages, asString(message)].filter(Boolean).join(" ");
+}
+
+function hasBusinessIntent(text) {
+  return /婚纱照|婚纱|旅拍|旅游照|亲子照|亲子|婚纱租赁|礼服|套餐|预算|价格|多少钱|费用|预约|档期|拍摄|试穿|定金|精修|底片|出片|地址|营业|咨询|联系/.test(
+    text
+  );
+}
+
+function extractLeadFields(text) {
+  const source = asString(text);
+  const serviceType = /婚纱照|婚纱/.test(source)
+    ? "婚纱照"
+    : /旅拍|旅游照|旅游写真/.test(source)
+      ? "旅拍"
+      : /亲子照|亲子|宝宝照|家庭照/.test(source)
+        ? "亲子照"
+        : /婚纱租赁|礼服|租婚纱|租赁/.test(source)
+          ? "婚纱租赁"
+          : "";
+  const budgetMatch = source.match(/预算[^\d]{0,8}(\d{3,7})\s*(?:元|块)?/);
+  const dateMatch = source.match(
+    /(今天|明天|后天|这周末|下周末|下周|下个月|本月底|月底|\d{1,2}月\d{1,2}[日号]?)/
+  );
+
+  return {
+    serviceType,
+    budget: budgetMatch ? `${budgetMatch[1]}元` : "",
+    preferredDate: dateMatch ? dateMatch[1] : ""
+  };
+}
+
+function mergeExtractedLead(aiResult, contact, contextText) {
+  const source = aiResult && typeof aiResult === "object" ? aiResult : {};
+  const lead = normalizeAiLead(source.lead);
+  const extracted = extractLeadFields(contextText);
+  const hasIntent = contact && hasBusinessIntent(contextText);
+  const leadStage = ["interested", "high_intent"].includes(source.leadStage)
+    ? source.leadStage
+    : hasIntent
+      ? "high_intent"
+      : "none";
+  const intent = source.intent && source.intent !== "other"
+    ? source.intent
+    : hasIntent
+      ? "booking"
+      : "other";
+
+  if (!lead.contact && contact) {
+    lead.contact = contact;
+  }
+  if (!lead.serviceType && extracted.serviceType) {
+    lead.serviceType = extracted.serviceType;
+  }
+  if (!lead.budget && extracted.budget) {
+    lead.budget = extracted.budget;
+  }
+  if (!lead.preferredDate && extracted.preferredDate) {
+    lead.preferredDate = extracted.preferredDate;
+  }
+
+  return {
+    ...source,
+    lead,
+    leadStage,
+    intent
+  };
 }
 
 function buildPackageReply(item) {
@@ -539,7 +678,7 @@ async function captureAiLead({
   const aiLead = normalizeAiLead(aiResult && aiResult.lead);
   const eligible = Boolean(
     aiResult &&
-    aiResult.leadStage === "high_intent" &&
+    ["interested", "high_intent"].includes(aiResult.leadStage) &&
     leadIntent &&
     hasLeadContact(aiLead)
   );
@@ -550,7 +689,7 @@ async function captureAiLead({
       stored: false,
       deduplicated: false,
       reason: hasLeadContact(aiLead)
-        ? "AI lead stage is not high_intent"
+        ? "AI lead stage is not interested or high_intent"
         : "AI did not extract a contact"
     };
   }
@@ -703,10 +842,7 @@ app.get("/api/photo-studio/knowledge", async (req, res) => {
   const studioId = asString(req.query.studioId) || defaultStudioId;
 
   try {
-    const [faqs, packages] = await Promise.all([
-      getFaqs(studioId),
-      getPackages(studioId)
-    ]);
+    const { faqs, packages } = await getKnowledge(studioId);
 
     res.json({
       ok: true,
@@ -1101,6 +1237,7 @@ app.post("/api/photo-studio/admin/knowledge/faqs", requireAdmin, async (req, res
       updatedAt: now
     };
     const result = await db.collection(faqCollection).add(record);
+    invalidateKnowledgeCache(studioId);
 
     res.status(201).json({
       ok: true,
@@ -1164,6 +1301,7 @@ app.patch("/api/photo-studio/admin/knowledge/faqs/:faqId", requireAdmin, async (
 
   try {
     await db.collection(faqCollection).doc(faqId).update(update);
+    invalidateKnowledgeCache();
     res.json({
       ok: true,
       type: "faq",
@@ -1218,6 +1356,7 @@ app.post("/api/photo-studio/admin/knowledge/packages", requireAdmin, async (req,
       updatedAt: now
     };
     const result = await db.collection(packageCollection).add(record);
+    invalidateKnowledgeCache(studioId);
 
     res.status(201).json({
       ok: true,
@@ -1285,6 +1424,7 @@ app.patch("/api/photo-studio/admin/knowledge/packages/:packageId", requireAdmin,
 
   try {
     await db.collection(packageCollection).doc(packageId).update(update);
+    invalidateKnowledgeCache();
     res.json({
       ok: true,
       type: "package",
@@ -1316,10 +1456,15 @@ app.post("/api/photo-studio/chat", async (req, res) => {
   }
 
   try {
-    const [faqs, packages] = await Promise.all([
-      getFaqs(studioId),
-      getPackages(studioId)
-    ]);
+    const knowledge = await withTimeout(
+      () => getKnowledge(studioId),
+      chatOperationTimeouts.knowledge,
+      getFallbackKnowledge()
+    );
+    const { faqs, packages } = knowledge;
+    const conversationText = getConversationText(message, history);
+    const greeting = isGreetingMessage(message);
+    const contact = extractContact(conversationText);
     const matchedFaq = findFaq(message, faqs);
     const matchedPackage = findPackage(message, packages);
     const packageIntent = /套餐|价格|多少钱|预算|包含|内容|费用/.test(message);
@@ -1339,52 +1484,68 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         ? "package_list"
         : matchedFaq
           ? "faq"
-          : "none";
+          : greeting
+            ? "greeting"
+            : "none";
     const fallbackReply = usePackageReply
       ? buildPackageReply(matchedPackage)
       : usePackageListReply
         ? buildPackageListReply(packages)
         : matchedFaq
           ? matchedFaq.answer
-          : "这个问题目前需要门店顾问确认。你可以留下联系方式和意向日期，我们会尽快联系你。";
+          : greeting
+            ? "你好，我是摄影店智能客服，可以帮你了解婚纱照、旅拍、亲子照、婚纱租赁和套餐价格。你想了解哪一项呢？"
+            : "我可以帮你了解婚纱照、旅拍、亲子照、婚纱租赁和套餐价格。你想了解哪一项呢？";
     const aiAvailability = getAvailability();
-    const knowledge = retrieveKnowledge({
+    const retrievedKnowledge = retrieveKnowledge({
       message,
       history,
       faqs,
       packages
     });
-    const aiResult = aiAvailability.enabled
+    const shouldUseAi = Boolean(
+      aiAvailability.enabled &&
+      !greeting &&
+      (baseMatchType === "none" || Boolean(contact))
+    );
+    const aiResult = shouldUseAi
       ? await generateReply({
         message,
         history,
-        faqs: knowledge.faqs,
-        packages: knowledge.packages
+        faqs: retrievedKnowledge.faqs,
+        packages: retrievedKnowledge.packages
       })
       : null;
+    const aiAttempted = Boolean(shouldUseAi);
     const aiUsed = Boolean(aiResult && aiResult.text);
     const matchType = aiUsed && baseMatchType === "none" ? "ai" : baseMatchType;
     let reply = aiUsed ? aiResult.text : fallbackReply;
-    const needHuman = matchType === "none";
+    const effectiveAiResult = mergeExtractedLead(
+      aiUsed ? aiResult : null,
+      contact,
+      conversationText
+    );
     const leadIntent = Boolean(
-      (aiResult && ["interested", "high_intent"].includes(aiResult.leadStage)) ||
-      /预约|档期|价格|多少钱|租|定金|联系|咨询|拍摄/.test(message)
+      (effectiveAiResult &&
+        ["interested", "high_intent"].includes(effectiveAiResult.leadStage)) ||
+      hasBusinessIntent(conversationText)
     );
 
-    const aiLead = normalizeAiLead(aiResult && aiResult.lead);
+    const aiLead = normalizeAiLead(effectiveAiResult && effectiveAiResult.lead);
     const leadCaptureEligible = Boolean(
-      aiResult &&
-      aiResult.leadStage === "high_intent" &&
+      effectiveAiResult &&
+      ["interested", "high_intent"].includes(effectiveAiResult.leadStage) &&
       leadIntent &&
       hasLeadContact(aiLead)
     );
-    const leadCapture = aiUsed
+    const needHuman = matchType === "none" && !aiUsed && !leadCaptureEligible;
+    const leadCapture = aiUsed || leadCaptureEligible
       ? await withTimeout(
         () => captureAiLead({
           studioId,
           sessionId: conversationId,
           message,
-          aiResult,
+          aiResult: effectiveAiResult,
           leadIntent
         }),
         chatOperationTimeouts.leadCapture,
@@ -1423,7 +1584,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       }
     }
 
-    if (aiUsed) {
+    if (aiUsed || leadCapture.eligible) {
       reply = finalizeAiReply(reply, leadCapture);
     }
 
@@ -1439,20 +1600,21 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         needHuman,
         aiEnabled: aiAvailability.enabled,
         aiUsed,
-        aiFallback: Boolean(aiAvailability.enabled && !aiUsed),
+        aiFallback: Boolean(aiAttempted && !aiUsed),
+        aiSkipped: Boolean(aiAvailability.enabled && !aiAttempted),
         aiProvider: aiUsed ? aiResult.provider : null,
         aiLatencyMs: aiResult && aiResult.latencyMs ? aiResult.latencyMs : null,
         aiStructured: Boolean(aiUsed && aiResult.structured),
-        aiIntent: aiUsed ? aiResult.intent : null,
-        aiLeadStage: aiUsed ? aiResult.leadStage : null,
-        aiLead: aiUsed ? aiResult.lead : null,
+        aiIntent: effectiveAiResult.intent,
+        aiLeadStage: effectiveAiResult.leadStage,
+        aiLead: effectiveAiResult.lead,
         aiFollowUpQuestion: aiUsed ? aiResult.followUpQuestion : null,
         aiLeadCaptureEligible: leadCapture.eligible,
         aiLeadStored: leadCapture.stored,
         aiLeadDeduplicated: leadCapture.deduplicated,
         aiLeadId: leadCapture.id || null,
         aiLeadNotificationSent: Boolean(notification && notification.sent),
-        knowledgeContext: knowledge.context,
+        knowledgeContext: retrievedKnowledge.context,
         source: "douyin-miniapp",
         createdAt: new Date()
       }),
@@ -1465,7 +1627,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
 
     let unanswered = null;
 
-    if (matchType === "none") {
+    if (matchType === "none" && !leadCaptureEligible) {
       const now = new Date();
       unanswered = await withTimeout(
         () => saveUnansweredQuestion({
@@ -1507,13 +1669,17 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         stored: leadCapture.stored,
         deduplicated: leadCapture.deduplicated,
         id: leadCapture.id || null,
+        reason: leadCapture.reason || null,
+        lead: leadCapture.lead || null,
         notification
       },
       ai: {
         enabled: aiAvailability.enabled,
         configured: aiAvailability.configured,
         used: aiUsed,
-        fallback: Boolean(aiAvailability.enabled && !aiUsed),
+        fallback: Boolean(aiAttempted && !aiUsed),
+        skipped: Boolean(aiAvailability.enabled && !aiAttempted),
+        reason: aiResult && aiResult.reason ? aiResult.reason : null,
         provider: aiUsed ? aiResult.provider : null,
         latencyMs: aiResult && aiResult.latencyMs ? aiResult.latencyMs : null,
         structured: Boolean(aiUsed && aiResult.structured),
@@ -1521,7 +1687,8 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         leadStage: aiUsed ? aiResult.leadStage : null,
         lead: aiUsed ? aiResult.lead : null,
         followUpQuestion: aiUsed ? aiResult.followUpQuestion : null,
-        knowledgeContext: knowledge.context
+        knowledgeContext: retrievedKnowledge.context,
+        extractedContact: contact
       }
     });
   } catch (error) {
