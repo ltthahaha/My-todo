@@ -588,19 +588,14 @@ function mergeExtractedLead(
   const lead = normalizeAiLead(source.lead);
   const state = normalizeSessionState(sessionState);
   const extracted = extractLeadFields(contextText);
-  const hasIntent = contact && hasBusinessIntent(contextText);
   const leadStage = ["interested", "high_intent"].includes(source.leadStage)
     ? source.leadStage
     : bookingIntent
-      ? "high_intent"
-      : hasIntent
       ? "high_intent"
       : "none";
   const intent = source.intent && source.intent !== "other"
     ? source.intent
     : bookingIntent
-      ? "booking"
-      : hasIntent
       ? "booking"
       : "other";
 
@@ -1157,7 +1152,7 @@ function removeRegistrationClaims(value) {
 function finalizeAiReply(reply, leadCapture) {
   const cleanedReply = removeRegistrationClaims(reply);
 
-  if (leadCapture && (leadCapture.stored || leadCapture.deduplicated)) {
+  if (leadCapture && leadCapture.stored && !leadCapture.deduplicated) {
     return `${cleanedReply || "好的，"}已记录您的预约意向，门店顾问会尽快联系您确认具体档期。`;
   }
 
