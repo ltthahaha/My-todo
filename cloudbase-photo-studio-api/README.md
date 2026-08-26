@@ -203,7 +203,23 @@ ARK_MODEL=你的模型接入点 ID
 }
 ```
 
-聊天记录会增加 `aiEnabled`、`aiUsed`、`aiFallback`、`aiProvider`、`aiLatencyMs`、`aiIntent`、`aiLeadStage`、`aiLead`、`aiFollowUpQuestion` 和 `knowledgeContext` 字段。运营统计接口会返回 `aiAnsweredChats`、`aiFallbackChats` 和 `highIntentChats`。
+聊天记录会增加 `aiEnabled`、`aiUsed`、`aiFallback`、`aiProvider`、`aiLatencyMs`、`aiIntent`、`aiLeadStage`、`aiLead`、`aiFollowUpQuestion`、`aiLeadCaptureEligible`、`aiLeadStored`、`aiLeadDeduplicated`、`aiLeadId`、`aiLeadNotificationSent` 和 `knowledgeContext` 字段。运营统计接口会返回 `aiAnsweredChats`、`aiFallbackChats` 和 `highIntentChats`。
+
+当 AI 判断客户为 `high_intent` 且提取到联系方式时，聊天接口会自动创建一条 `leads` 记录，来源为 `douyin-miniapp-ai`，并发送飞书通知。相同 `studioId + sessionId + source` 的后续消息不会重复创建线索。只有数据库保存成功后，客服才会回复“已记录预约意向”；如果没有联系方式或保存失败，不会虚假承诺已经登记。
+
+聊天响应中的 `leadCapture` 字段示例：
+
+```json
+{
+  "eligible": true,
+  "stored": true,
+  "deduplicated": false,
+  "id": "lead-document-id",
+  "notification": {
+    "sent": true
+  }
+}
+```
 
 建议先使用 50 个真实问题做灰度测试，重点检查价格、套餐内容、档期、定金和退款等问题，确认回答准确后再面向全部用户开启。
 

@@ -305,7 +305,7 @@ function buildPackageReply(item) {
     ? `包含：${item.items.join("、")}。`
     : "";
   const description = item.description
-    ? `${item.description}。`
+    ? `${item.description.replace(/[。！？!?]+$/g, "")}。`
     : "";
 
   return `${item.name}，价格${item.price}。${items}${description}如果你想预约，可以留下联系方式和意向日期，我们会尽快联系你。`;
@@ -474,6 +474,154 @@ async function saveLead(lead) {
     console.error("CloudBase lead write failed", error);
     throw new Error(error.message || "CloudBase lead storage failed");
   }
+}
+
+function normalizeAiLead(value) {
+  const source = value && typeof value === "object" ? value : {};
+
+  return {
+    name: asString(source.name).slice(0, 120),
+    contact: asString(source.contact).slice(0, 120),
+    serviceType: asString(source.serviceType).slice(0, 120),
+    preferredDate: asString(source.preferredDate).slice(0, 120),
+    budget: asString(source.budget).slice(0, 120)
+  };
+}
+
+function hasLeadContact(lead) {
+  return Boolean(asString(lead && lead.contact));
+}
+
+async function captureAiLead({
+  studioId,
+  sessionId,
+  message,
+  aiResult,
+  leadIntent
+}) {
+  const aiLead = normalizeAiLead(aiResult && aiResult.lead);
+  const eligible = Boolean(
+    aiResult &&
+    aiResult.leadStage === "high_intent" &&
+    leadIntent &&
+    hasLeadContact(aiLead)
+  );
+
+  if (!eligible) {
+    return {
+      eligible: false,
+      stored: false,
+      deduplicated: false,
+      reason: hasLeadContact(aiLead)
+        ? "AI lead stage is not high_intent"
+        : "AI did not extract a contact"
+    };
+  }
+
+  const db = getDatabase();
+
+  if (!db) {
+    return {
+      eligible: true,
+      stored: false,
+      deduplicated: false,
+      lead: aiLead,
+      reason: "CLOUDBASE_ENV_ID is not configured"
+    };
+  }
+
+  try {
+    const existing = await db.collection(leadCollection)
+      .where({
+        studioId,
+        sessionId,
+        source: "douyin-miniapp-ai"
+      })
+      .limit(1)
+      .get();
+    const previous = Array.isArray(existing.data) ? existing.data[0] : null;
+
+    if (previous && previous._id) {
+      return {
+        eligible: true,
+        stored: true,
+        deduplicated: true,
+        id: previous._id,
+        lead: aiLead
+      };
+    }
+
+    const lead = {
+      studioId,
+      sessionId,
+      name: aiLead.name,
+      contact: aiLead.contact,
+      serviceType: aiLead.serviceType,
+      preferredDate: aiLead.preferredDate,
+      budget: aiLead.budget,
+      note: `AI 自动识别：${message}`,
+      source: "douyin-miniapp-ai",
+      status: "new",
+      aiIntent: aiResult.intent || "other",
+      aiLeadStage: aiResult.leadStage,
+      createdAt: new Date()
+    };
+    const storage = await saveLead(lead);
+
+    return {
+      eligible: true,
+      stored: storage.stored,
+      deduplicated: false,
+      id: storage.id,
+      lead
+    };
+  } catch (error) {
+    console.error("AI lead capture failed", error);
+    return {
+      eligible: true,
+      stored: false,
+      deduplicated: false,
+      lead: aiLead,
+      reason: error.message || "AI lead capture failed"
+    };
+  }
+}
+
+function removeRegistrationClaims(value) {
+  let text = asString(value);
+  const patterns = [
+    /我们已经帮您[^。！？!?]*(?:登记|记录|提交)[^。！？!?]*[。！？!?]?/g,
+    /已经帮您[^。！？!?]*(?:登记|记录|提交)[^。！？!?]*[。！？!?]?/g,
+    /已为您[^。！？!?]*(?:登记|记录|提交)[^。！？!?]*[。！？!?]?/g,
+    /已经为您[^。！？!?]*(?:登记|记录|提交)[^。！？!?]*[。！？!?]?/g
+  ];
+
+  patterns.forEach((pattern) => {
+    text = text.replace(pattern, "");
+  });
+
+  return text
+    .replace(/\s{2,}/g, " ")
+    .replace(/([。！？!?])\1+/g, "$1")
+    .trim();
+}
+
+function finalizeAiReply(reply, leadCapture) {
+  const cleanedReply = removeRegistrationClaims(reply);
+
+  if (leadCapture && (leadCapture.stored || leadCapture.deduplicated)) {
+    return `${cleanedReply || "好的，"}已记录您的预约意向，门店顾问会尽快联系您确认具体档期。`;
+  }
+
+  if (leadCapture && leadCapture.eligible && !leadCapture.stored) {
+    if (hasLeadContact(leadCapture.lead)) {
+      return `${cleanedReply || "好的。"}我们已收到您的联系方式，但登记服务暂时不可用，请稍后重试或联系门店顾问。`;
+    }
+
+    return `${cleanedReply || "好的。"}请留下手机号或微信，门店顾问才能为您登记预约意向。`;
+  }
+
+  return cleanedReply || asString(reply);
 }
 
 app.get("/health", (req, res) => {
@@ -1120,6 +1268,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
   const sessionId = asString(req.body.sessionId);
   const studioId = asString(req.body.studioId) || defaultStudioId;
   const history = Array.isArray(req.body.history) ? req.body.history : [];
+  const conversationId = sessionId || `session-${Date.now()}`;
 
   if (!message) {
     res.status(400).json({
@@ -1176,16 +1325,48 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       : null;
     const aiUsed = Boolean(aiResult && aiResult.text);
     const matchType = aiUsed && baseMatchType === "none" ? "ai" : baseMatchType;
-    const reply = aiUsed ? aiResult.text : fallbackReply;
+    let reply = aiUsed ? aiResult.text : fallbackReply;
     const needHuman = matchType === "none";
     const leadIntent = Boolean(
       (aiResult && ["interested", "high_intent"].includes(aiResult.leadStage)) ||
       /预约|档期|价格|多少钱|租|定金|联系|咨询|拍摄/.test(message)
     );
 
+    const leadCapture = aiUsed
+      ? await captureAiLead({
+        studioId,
+        sessionId: conversationId,
+        message,
+        aiResult,
+        leadIntent
+      })
+      : {
+        eligible: false,
+        stored: false,
+        deduplicated: false,
+        reason: "AI did not answer this message"
+      };
+    let notification = null;
+
+    if (leadCapture.stored && !leadCapture.deduplicated) {
+      try {
+        notification = await notifyFeishu(buildLeadText(leadCapture.lead));
+      } catch (error) {
+        console.error("AI lead Feishu notification failed", error);
+        notification = {
+          sent: false,
+          reason: error.message || "Feishu notification failed"
+        };
+      }
+    }
+
+    if (aiUsed) {
+      reply = finalizeAiReply(reply, leadCapture);
+    }
+
     const chatLog = await saveChatMessage({
       studioId,
-      sessionId: sessionId || `session-${Date.now()}`,
+      sessionId: conversationId,
       userMessage: message,
       reply,
       matchedFaqId: matchedFaq ? matchedFaq.id : null,
@@ -1202,6 +1383,11 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       aiLeadStage: aiUsed ? aiResult.leadStage : null,
       aiLead: aiUsed ? aiResult.lead : null,
       aiFollowUpQuestion: aiUsed ? aiResult.followUpQuestion : null,
+      aiLeadCaptureEligible: leadCapture.eligible,
+      aiLeadStored: leadCapture.stored,
+      aiLeadDeduplicated: leadCapture.deduplicated,
+      aiLeadId: leadCapture.id || null,
+      aiLeadNotificationSent: Boolean(notification && notification.sent),
       knowledgeContext: knowledge.context,
       source: "douyin-miniapp",
       createdAt: new Date()
@@ -1236,9 +1422,16 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       matchType,
       needHuman,
       leadIntent,
-      sessionId: sessionId || null,
+      sessionId: conversationId,
       chatLog,
       unanswered,
+      leadCapture: {
+        eligible: leadCapture.eligible,
+        stored: leadCapture.stored,
+        deduplicated: leadCapture.deduplicated,
+        id: leadCapture.id || null,
+        notification
+      },
       ai: {
         enabled: aiAvailability.enabled,
         configured: aiAvailability.configured,
