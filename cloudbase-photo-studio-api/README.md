@@ -72,8 +72,8 @@ AI_PROVIDER=volcengine
 ARK_API_KEY=火山方舟服务端 API Key
 ARK_MODEL=模型接入点 ID
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3/chat/completions
-AI_TIMEOUT_MS=8000
-AI_MAX_TOKENS=300
+AI_TIMEOUT_MS=7500
+AI_MAX_TOKENS=280
 ```
 
 HTTP 云函数需要显式配置服务端鉴权。推荐在 CloudBase 的 API Key 管理中创建服务端 API Key，然后在云函数环境变量中配置 `CLOUDBASE_APIKEY`。
@@ -157,7 +157,7 @@ ARK_MODEL=你的模型接入点 ID
 
 模型密钥只能配置在 CloudBase HTTP 云函数环境变量中，不能放进抖音小程序、静态管理后台或 GitHub。
 
-聊天接口会先根据当前问题和最近对话，对 FAQ、套餐做轻量相关性检索，只把最相关的最多 4 条 FAQ 和 3 个套餐发送给模型。模型被要求只能基于相关门店资料回答，并主动推荐、追问和识别客户意向；模型未配置、超时、报错或返回 `NEED_HUMAN` 时，自动回退到现有 FAQ/套餐规则回复。
+聊天接口会先根据当前问题和最近对话，对 FAQ、套餐做轻量相关性检索，只把最相关的最多 3 条 FAQ 和 2 个套餐发送给模型。模型被要求只能基于相关门店资料回答，并主动推荐、追问和识别客户意向；模型未配置、超时、报错或返回 `NEED_HUMAN` 时，自动回退到现有 FAQ/套餐规则回复。为适配 CloudBase HTTP 云函数 15 秒上限，AI 请求默认最多等待 7.5 秒，代码会将环境变量中的上限限制在 9 秒以内。
 
 小程序聊天请求可额外传入：
 

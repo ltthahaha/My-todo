@@ -20,12 +20,12 @@ function getConfig() {
         "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
     ),
     timeoutMs: Math.min(
-      Math.max(Number(process.env.AI_TIMEOUT_MS) || 8000, 2000),
-      20000
+      Math.max(Number(process.env.AI_TIMEOUT_MS) || 7500, 2000),
+      9000
     ),
     maxTokens: Math.min(
-      Math.max(Number(process.env.AI_MAX_TOKENS) || 450, 120),
-      800
+      Math.max(Number(process.env.AI_MAX_TOKENS) || 280, 120),
+      360
     )
   };
 }

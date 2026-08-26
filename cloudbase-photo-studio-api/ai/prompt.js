@@ -11,29 +11,29 @@ function compactHistory(history) {
     .filter((item) => item && (item.role === "user" || item.role === "assistant"))
     .map((item) => ({
       role: item.role,
-      content: asString(item.content || item.text).slice(0, 500)
+      content: asString(item.content || item.text).slice(0, 350)
     }))
     .filter((item) => item.content)
-    .slice(-6);
+    .slice(-4);
 }
 
 function compactFaqs(faqs) {
-  return faqs.slice(0, 4).map((item) => ({
+  return faqs.slice(0, 3).map((item) => ({
     id: item.id,
     category: item.category,
     keywords: item.keywords,
-    answer: item.answer
+    answer: asString(item.answer).slice(0, 700)
   }));
 }
 
 function compactPackages(packages) {
-  return packages.slice(0, 3).map((item) => ({
+  return packages.slice(0, 2).map((item) => ({
     id: item.id,
     name: item.name,
     category: item.category,
     price: item.price,
-    items: item.items,
-    description: item.description
+    items: Array.isArray(item.items) ? item.items.slice(0, 5) : [],
+    description: asString(item.description).slice(0, 240)
   }));
 }
 

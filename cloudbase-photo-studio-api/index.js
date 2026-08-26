@@ -15,6 +15,12 @@ const leadCollection = process.env.CLOUDBASE_LEAD_COLLECTION || "leads";
 const chatCollection = process.env.CLOUDBASE_CHAT_COLLECTION || "chat_messages";
 const unansweredCollection = process.env.CLOUDBASE_UNANSWERED_COLLECTION || "unanswered_questions";
 const adminApiToken = asString(process.env.ADMIN_API_TOKEN);
+const chatOperationTimeouts = {
+  leadCapture: 1800,
+  feishuNotification: 1000,
+  chatLog: 1000,
+  unanswered: 800
+};
 
 let cloudbaseDb = null;
 
@@ -33,6 +39,37 @@ app.use((req, res, next) => {
 
 function asString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function withTimeout(task, timeoutMs, fallback) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      resolve(fallback);
+    }, timeoutMs);
+
+    Promise.resolve()
+      .then(task)
+      .then((value) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
 }
 
 function readAdminToken(req) {
@@ -1279,8 +1316,10 @@ app.post("/api/photo-studio/chat", async (req, res) => {
   }
 
   try {
-    const faqs = await getFaqs(studioId);
-    const packages = await getPackages(studioId);
+    const [faqs, packages] = await Promise.all([
+      getFaqs(studioId),
+      getPackages(studioId)
+    ]);
     const matchedFaq = findFaq(message, faqs);
     const matchedPackage = findPackage(message, packages);
     const packageIntent = /套餐|价格|多少钱|预算|包含|内容|费用/.test(message);
@@ -1332,14 +1371,31 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       /预约|档期|价格|多少钱|租|定金|联系|咨询|拍摄/.test(message)
     );
 
+    const aiLead = normalizeAiLead(aiResult && aiResult.lead);
+    const leadCaptureEligible = Boolean(
+      aiResult &&
+      aiResult.leadStage === "high_intent" &&
+      leadIntent &&
+      hasLeadContact(aiLead)
+    );
     const leadCapture = aiUsed
-      ? await captureAiLead({
-        studioId,
-        sessionId: conversationId,
-        message,
-        aiResult,
-        leadIntent
-      })
+      ? await withTimeout(
+        () => captureAiLead({
+          studioId,
+          sessionId: conversationId,
+          message,
+          aiResult,
+          leadIntent
+        }),
+        chatOperationTimeouts.leadCapture,
+        {
+          eligible: leadCaptureEligible,
+          stored: false,
+          deduplicated: false,
+          lead: aiLead,
+          reason: "AI lead capture timed out"
+        }
+      )
       : {
         eligible: false,
         stored: false,
@@ -1350,7 +1406,14 @@ app.post("/api/photo-studio/chat", async (req, res) => {
 
     if (leadCapture.stored && !leadCapture.deduplicated) {
       try {
-        notification = await notifyFeishu(buildLeadText(leadCapture.lead));
+        notification = await withTimeout(
+          () => notifyFeishu(buildLeadText(leadCapture.lead)),
+          chatOperationTimeouts.feishuNotification,
+          {
+            sent: false,
+            reason: "Feishu notification timed out"
+          }
+        );
       } catch (error) {
         console.error("AI lead Feishu notification failed", error);
         notification = {
@@ -1364,54 +1427,68 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       reply = finalizeAiReply(reply, leadCapture);
     }
 
-    const chatLog = await saveChatMessage({
-      studioId,
-      sessionId: conversationId,
-      userMessage: message,
-      reply,
-      matchedFaqId: matchedFaq ? matchedFaq.id : null,
-      matchedPackageId: usePackageReply ? matchedPackage.id : null,
-      matchType,
-      needHuman,
-      aiEnabled: aiAvailability.enabled,
-      aiUsed,
-      aiFallback: Boolean(aiAvailability.enabled && !aiUsed),
-      aiProvider: aiUsed ? aiResult.provider : null,
-      aiLatencyMs: aiResult && aiResult.latencyMs ? aiResult.latencyMs : null,
-      aiStructured: Boolean(aiUsed && aiResult.structured),
-      aiIntent: aiUsed ? aiResult.intent : null,
-      aiLeadStage: aiUsed ? aiResult.leadStage : null,
-      aiLead: aiUsed ? aiResult.lead : null,
-      aiFollowUpQuestion: aiUsed ? aiResult.followUpQuestion : null,
-      aiLeadCaptureEligible: leadCapture.eligible,
-      aiLeadStored: leadCapture.stored,
-      aiLeadDeduplicated: leadCapture.deduplicated,
-      aiLeadId: leadCapture.id || null,
-      aiLeadNotificationSent: Boolean(notification && notification.sent),
-      knowledgeContext: knowledge.context,
-      source: "douyin-miniapp",
-      createdAt: new Date()
-    });
+    const chatLog = await withTimeout(
+      () => saveChatMessage({
+        studioId,
+        sessionId: conversationId,
+        userMessage: message,
+        reply,
+        matchedFaqId: matchedFaq ? matchedFaq.id : null,
+        matchedPackageId: usePackageReply ? matchedPackage.id : null,
+        matchType,
+        needHuman,
+        aiEnabled: aiAvailability.enabled,
+        aiUsed,
+        aiFallback: Boolean(aiAvailability.enabled && !aiUsed),
+        aiProvider: aiUsed ? aiResult.provider : null,
+        aiLatencyMs: aiResult && aiResult.latencyMs ? aiResult.latencyMs : null,
+        aiStructured: Boolean(aiUsed && aiResult.structured),
+        aiIntent: aiUsed ? aiResult.intent : null,
+        aiLeadStage: aiUsed ? aiResult.leadStage : null,
+        aiLead: aiUsed ? aiResult.lead : null,
+        aiFollowUpQuestion: aiUsed ? aiResult.followUpQuestion : null,
+        aiLeadCaptureEligible: leadCapture.eligible,
+        aiLeadStored: leadCapture.stored,
+        aiLeadDeduplicated: leadCapture.deduplicated,
+        aiLeadId: leadCapture.id || null,
+        aiLeadNotificationSent: Boolean(notification && notification.sent),
+        knowledgeContext: knowledge.context,
+        source: "douyin-miniapp",
+        createdAt: new Date()
+      }),
+      chatOperationTimeouts.chatLog,
+      {
+        stored: false,
+        reason: "chat log write timed out"
+      }
+    );
 
     let unanswered = null;
 
     if (matchType === "none") {
       const now = new Date();
-      unanswered = await saveUnansweredQuestion({
-        studioId,
-        question: message,
-        questionKey: normalizeQuestion(message),
-        sampleReply: reply,
-        status: "open",
-        count: 1,
-        firstAskedAt: now,
-        lastAskedAt: now,
-        lastSessionId: sessionId || null,
-        source: "douyin-miniapp",
-        staffNote: "",
-        createdAt: now,
-        updatedAt: now
-      });
+      unanswered = await withTimeout(
+        () => saveUnansweredQuestion({
+          studioId,
+          question: message,
+          questionKey: normalizeQuestion(message),
+          sampleReply: reply,
+          status: "open",
+          count: 1,
+          firstAskedAt: now,
+          lastAskedAt: now,
+          lastSessionId: sessionId || null,
+          source: "douyin-miniapp",
+          staffNote: "",
+          createdAt: now,
+          updatedAt: now
+        }),
+        chatOperationTimeouts.unanswered,
+        {
+          stored: false,
+          reason: "unanswered question write timed out"
+        }
+      );
     }
 
     res.json({

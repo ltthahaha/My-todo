@@ -62,7 +62,7 @@ function retrieveKnowledge({ message, history, faqs, packages }) {
     }
 
     return score;
-  }, 4);
+  }, 3);
 
   const relevantPackages = rankRecords(packages, (item) => {
     let score = 0;
@@ -80,7 +80,7 @@ function retrieveKnowledge({ message, history, faqs, packages }) {
     }
 
     return score;
-  }, 3);
+  }, 2);
 
   return {
     faqs: relevantFaqs,
