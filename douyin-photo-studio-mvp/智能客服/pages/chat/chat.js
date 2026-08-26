@@ -1,5 +1,6 @@
 const api = require("../../services/api")
 const { getService } = require("../../services/catalog")
+const { studioConfig } = require("../../config/studio")
 
 const networkErrorAnswer = "当前连接有点慢，请稍后重试，或直接填写预约意向让门店顾问联系你。"
 const sessionStoragePrefix = "photo_studio_chat_session_"
@@ -55,7 +56,7 @@ Page({
     messages: [
       {
         role: "bot",
-        text: "你好，我是映白摄影智能客服。你可以咨询套餐、价格、服装、出片时间和预约流程。"
+        text: `你好，我是${studioConfig.studioName}智能客服。你可以咨询套餐、价格、服装、出片时间和预约流程。`
       }
     ],
     inputValue: "",
@@ -69,7 +70,7 @@ Page({
     const sessionId = getStoredSessionId(current.key) ||
       `douyin-${current.key}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const welcomeText = current.key === "general"
-      ? "你好，我是映白摄影智能客服。你可以咨询套餐、价格、服装、出片时间和预约流程。"
+      ? `你好，我是${studioConfig.studioName}智能客服。你可以咨询套餐、价格、服装、出片时间和预约流程。`
       : `你好，我可以帮你了解${current.title}的套餐、价格和预约安排。你想先了解哪一项呢？`
 
     this.setData({
@@ -130,7 +131,8 @@ Page({
     })
 
     api.chat({
-      studioId: "demo-studio",
+      studioId: studioConfig.studioId,
+      douyinAppId: studioConfig.douyinAppId,
       sessionId: this.data.sessionId,
       serviceKey: this.data.serviceKey,
       serviceType: this.data.service.title === "智能客服"

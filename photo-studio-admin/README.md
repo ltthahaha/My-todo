@@ -32,6 +32,8 @@ const API_BASE_URL = "https://你的 CloudBase HTTP 网关域名";
 const STUDIO_ID = "demo-studio";
 ```
 
+登录成功后，后台会优先使用账号记录中的 `studioId` 查询数据；`STUDIO_ID` 只作为未登录或旧版 `ADMIN_API_TOKEN` 调试时的兜底值。正式给不同摄影店开账号时，关键是让 `admin_users.studioId` 与小程序 `config/studio.js`、`studios` 集合中的 `studioId` 保持一致。
+
 ## 使用方式
 
 1. 将 `index.html` 部署到静态网站托管、Vercel 或其他 HTTPS 静态托管服务。
@@ -57,4 +59,4 @@ PATCH /api/photo-studio/admin/leads/:leadId
 
 ## 安全边界
 
-该页面不是完整的多用户登录系统。正式交付给多个摄影店前，还需要增加账号登录、角色权限、令牌轮换和审计日志。
+当前已经具备基础账号登录和按 `studioId` 隔离数据的能力。正式交付给多个摄影店前，还需要增加账号创建流程、角色权限、令牌轮换和审计日志。

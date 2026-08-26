@@ -66,6 +66,8 @@ chmod +x scf_bootstrap
 CLOUDBASE_ENV_ID=你的 CloudBase 环境 ID
 CLOUDBASE_APIKEY=你的 CloudBase 服务端 API Key
 DEFAULT_STUDIO_ID=demo-studio
+DEFAULT_STUDIO_NAME=映白摄影
+CLOUDBASE_STUDIO_COLLECTION=studios
 CLOUDBASE_FAQ_COLLECTION=faqs
 CLOUDBASE_PACKAGE_COLLECTION=packages
 CLOUDBASE_LEAD_COLLECTION=leads
@@ -76,6 +78,7 @@ CLOUDBASE_DOUYIN_USER_COLLECTION=douyin_users
 CLOUDBASE_ADMIN_USER_COLLECTION=admin_users
 DOUYIN_APP_ID=tt428a3437dcf0288901
 DOUYIN_APP_SECRET=抖音小程序 AppSecret
+DOUYIN_APP_SECRETS={"tt428a3437dcf0288901":"抖音小程序 AppSecret"}
 DOUYIN_AUTH_TOKEN_SECRET=用于签发小程序用户 token 的随机密钥
 FEISHU_BOT_WEBHOOK=你的飞书群机器人 Webhook
 ADMIN_API_TOKEN=线索管理后台访问令牌
@@ -94,6 +97,28 @@ HTTP 云函数需要显式配置服务端鉴权。推荐在 CloudBase 的 API Ke
 
 也可以使用腾讯云 `SecretId` 和 `SecretKey`，配置 `CLOUDBASE_SECRET_ID`、`CLOUDBASE_SECRET_KEY`。密钥只能放在 CloudBase 服务端环境变量中，不能提交到 GitHub，也不能放进抖音小程序。
 
+### 门店和抖音 AppID 绑定
+
+多店模式下，后端用 `studioId + douyinAppId` 判断请求属于哪家摄影店。CloudBase 需要创建 `studios` 集合，每家店一条记录：
+
+```json
+{
+  "studioId": "demo-studio",
+  "name": "映白摄影",
+  "status": "active",
+  "douyinAppId": "tt428a3437dcf0288901",
+  "apiEnabled": true
+}
+```
+
+每家店如果使用独立小程序，就把 AppID 对应的 AppSecret 配到 `DOUYIN_APP_SECRETS`：
+
+```text
+DOUYIN_APP_SECRETS={"tt428a3437dcf0288901":"secret1","tt另一家AppID":"secret2"}
+```
+
+单店测试可以继续使用 `DOUYIN_APP_ID` 和 `DOUYIN_APP_SECRET`。多店正式使用时，建议以 `studios` 集合为准，并让 `admin_users.studioId`、小程序 `config/studio.js` 中的 `studioId` 保持一致。
+
 ### 抖音用户身份
 
 小程序端会调用 `tt.login()` 获取临时 `code`，再请求：
@@ -102,12 +127,13 @@ HTTP 云函数需要显式配置服务端鉴权。推荐在 CloudBase 的 API Ke
 POST /api/photo-studio/auth/login
 ```
 
-服务端使用 `DOUYIN_APP_ID` 和 `DOUYIN_APP_SECRET` 换取抖音 `openid`，生成内部 `userId` 和签名 `userToken`。后续 `/chat` 和 `/leads` 请求会自动携带 `userId`、`userToken`、`anonymousId`，数据库中的 `chat_sessions`、`chat_messages`、`leads` 会写入这些字段。
+服务端根据请求中的 `douyinAppId` 找到对应 AppSecret，换取抖音 `openid`，生成内部 `userId` 和签名 `userToken`。后续 `/chat` 和 `/leads` 请求会自动携带 `userId`、`userToken`、`anonymousId`，数据库中的 `chat_sessions`、`chat_messages`、`leads` 会写入这些字段。
 
 CloudBase 需要额外创建集合：
 
 ```text
 douyin_users
+studios
 ```
 
 `DOUYIN_AUTH_TOKEN_SECRET` 建议填写一段 32 位以上随机字符串。如果不配置，会回退使用 `ADMIN_API_TOKEN`，但正式环境建议单独配置。
@@ -448,21 +474,28 @@ enabled: true
 - 预约、交付、门店规则等问题仍由 FAQ 优先回答。
 - 聊天接口返回 `matchedPackageId`，并写入 `chat_messages`，便于后续统计套餐咨询量。
 
-## 修改抖音小程序地址
+## 修改抖音小程序配置
 
-将：
+小程序端统一修改：
 
-```js
-const API_BASE_URL = "https://你的后端域名"
+```text
+douyin-photo-studio-mvp/智能客服/config/studio.js
 ```
 
-配置为 CloudBase 的默认 HTTP 域名或自己的 HTTPS 域名，例如：
+示例：
 
 ```js
-const API_BASE_URL = "https://api.example.com"
+const studioConfig = {
+  studioId: "demo-studio",
+  studioName: "映白摄影",
+  douyinAppId: "tt428a3437dcf0288901",
+  apiBaseUrl: "https://api.example.com"
+}
 ```
 
-小程序合法域名只填写：
+如果每家店使用独立小程序，还要同步修改 `project.config.json` 中的 `appid`。
+
+抖音小程序合法域名只填写：
 
 ```text
 api.example.com

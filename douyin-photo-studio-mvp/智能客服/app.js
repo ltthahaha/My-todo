@@ -1,14 +1,16 @@
 const api = require("./services/api")
+const { studioConfig } = require("./config/studio")
 
 App({
   globalData: {
-    studioName: "映白摄影",
-    studioId: "demo-studio",
+    studioName: studioConfig.studioName,
+    studioId: studioConfig.studioId,
+    douyinAppId: studioConfig.douyinAppId,
     authUser: null
   },
 
   onLaunch: function () {
-    console.log("映白摄影智能客服小程序启动")
+    console.log(`${studioConfig.studioName}智能客服小程序启动`)
     api.loginWithDouyin(this.globalData.studioId)
   }
 })

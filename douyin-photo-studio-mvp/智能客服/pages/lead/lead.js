@@ -1,4 +1,5 @@
 const api = require("../../services/api")
+const { studioConfig } = require("../../config/studio")
 
 Page({
   data: {
@@ -61,7 +62,8 @@ Page({
     }
 
     const payload = {
-      studioId: "demo-studio",
+      studioId: studioConfig.studioId,
+      douyinAppId: studioConfig.douyinAppId,
       name: this.data.name,
       contact: this.data.contact,
       serviceType: this.data.serviceType,

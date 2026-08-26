@@ -1,35 +1,43 @@
 # API 配置说明
 
-当前小程序默认使用本地模拟数据，方便在没有后端时编译和演示。
+当前小程序已经接入 CloudBase HTTP API。不同摄影店复制这份小程序模板时，只需要修改统一配置文件：
 
-正式接入后端时，修改 `services/api.js`：
+```text
+config/studio.js
+```
+
+示例：
 
 ```js
-const API_BASE_URL = "https://你的后端域名"
+const studioConfig = {
+  studioId: "demo-studio",
+  studioName: "映白摄影",
+  douyinAppId: "tt428a3437dcf0288901",
+  apiBaseUrl: "https://你的 CloudBase HTTP 网关域名"
+}
 ```
+
+`services/api.js` 会自动把 `studioId` 和 `douyinAppId` 带到 `/auth/login`、`/chat`、`/leads`。不要再在业务页面里硬编码门店 ID。
+
+每家摄影店如果使用独立抖音小程序，还需要同步修改 `project.config.json` 中的 `appid`，并在 CloudBase 数据库 `studios` 集合中创建对应记录。
 
 后端需要提供：
 
 ```text
+POST /api/photo-studio/auth/login
 POST /api/photo-studio/chat
 POST /api/photo-studio/leads
 ```
 
-当前项目根目录已经提供可联调的 Vercel API：
-
-```text
-api/photo-studio/chat.js
-api/photo-studio/leads.js
-```
-
-`/api/photo-studio/chat` 当前使用 `data/faq.json` 做稳定的知识库匹配，暂未接入大模型。
-`/api/photo-studio/leads` 会校验线索，并在配置 `FEISHU_BOT_WEBHOOK` 后推送到飞书群机器人。
+`/api/photo-studio/chat` 会读取当前 `studioId` 下的 FAQ、套餐、聊天上下文，并按配置调用 AI。
+`/api/photo-studio/leads` 会校验线索，保存到 CloudBase，并在配置 `FEISHU_BOT_WEBHOOK` 后推送到飞书群机器人。
 
 客服请求示例：
 
 ```json
 {
   "studioId": "demo-studio",
+  "douyinAppId": "tt428a3437dcf0288901",
   "sessionId": "session-001",
   "message": "婚纱照多少钱？"
 }
@@ -51,6 +59,7 @@ api/photo-studio/leads.js
 ```json
 {
   "studioId": "demo-studio",
+  "douyinAppId": "tt428a3437dcf0288901",
   "name": "李小姐",
   "contact": "13800000000",
   "serviceType": "婚纱照",
@@ -61,4 +70,4 @@ api/photo-studio/leads.js
 }
 ```
 
-不要把大模型 API Key、飞书 App Secret 或群机器人 Webhook 写入小程序前端。
+不要把大模型 API Key、抖音 AppSecret、飞书 App Secret 或群机器人 Webhook 写入小程序前端。

@@ -1,7 +1,9 @@
 const { getService } = require("../../services/catalog")
+const { studioConfig } = require("../../config/studio")
 
 Page({
   data: {
+    studioName: studioConfig.studioName,
     serviceKey: "wedding",
     service: getService("wedding")
   },

@@ -5,7 +5,7 @@
       <view class="service-tag">{{service.tag}}</view>
       <view class="price-hint">{{service.priceHint}}</view>
     </view>
-    <view class="eyebrow">映白摄影 · 服务介绍</view>
+    <view class="eyebrow">{{studioName}} · 服务介绍</view>
     <view class="title">{{service.title}}</view>
     <view class="description">{{service.detailDescription}}</view>
   </view>

@@ -1,4 +1,5 @@
-const API_BASE_URL = "https://photo-studio-prod-d2drpjd43ee075-1384636564.ap-shanghai.app.tcloudbase.com"
+const { studioConfig } = require("../config/studio")
+const API_BASE_URL = studioConfig.apiBaseUrl
 const AUTH_STORAGE_KEY = "photo_studio_douyin_auth"
 const ANONYMOUS_STORAGE_KEY = "photo_studio_anonymous_id"
 
@@ -38,14 +39,15 @@ function setStorage(key, value) {
 }
 
 function getAnonymousId() {
-  const stored = getStorage(ANONYMOUS_STORAGE_KEY)
+  const key = `${ANONYMOUS_STORAGE_KEY}_${studioConfig.studioId}`
+  const stored = getStorage(key)
 
   if (typeof stored === "string" && stored) {
     return stored
   }
 
   const anonymousId = `anon-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-  setStorage(ANONYMOUS_STORAGE_KEY, anonymousId)
+  setStorage(key, anonymousId)
   return anonymousId
 }
 
@@ -56,7 +58,7 @@ function getStoredAuth() {
     return app.globalData.authUser
   }
 
-  const stored = getStorage(AUTH_STORAGE_KEY)
+  const stored = getStorage(`${AUTH_STORAGE_KEY}_${studioConfig.studioId}`)
   return stored && typeof stored === "object" ? stored : null
 }
 
@@ -67,7 +69,7 @@ function storeAuth(authUser) {
     app.globalData.authUser = authUser
   }
 
-  setStorage(AUTH_STORAGE_KEY, authUser)
+  setStorage(`${AUTH_STORAGE_KEY}_${studioConfig.studioId}`, authUser)
 }
 
 function request(path, options = {}) {
@@ -134,6 +136,7 @@ function loginWithDouyin(studioId) {
           method: "POST",
           data: {
             studioId,
+            douyinAppId: studioConfig.douyinAppId,
             code,
             anonymousId
           }
@@ -173,7 +176,7 @@ function loginWithDouyin(studioId) {
 
 function withAuth(payload, sender) {
   const data = payload || {}
-  const studioId = data.studioId || "demo-studio"
+  const studioId = data.studioId || studioConfig.studioId
 
   return loginWithDouyin(studioId).then((authUser) => {
     const authPayload = authUser
@@ -188,6 +191,8 @@ function withAuth(payload, sender) {
 
     return sender({
       ...data,
+      studioId,
+      douyinAppId: data.douyinAppId || studioConfig.douyinAppId,
       ...authPayload
     })
   })

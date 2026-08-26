@@ -9,6 +9,7 @@ const { retrieveKnowledge } = require("./ai/retrieval");
 const app = express();
 const port = Number(process.env.PORT || 9000);
 const defaultStudioId = process.env.DEFAULT_STUDIO_ID || "demo-studio";
+const studioCollection = process.env.CLOUDBASE_STUDIO_COLLECTION || "studios";
 const faqCollection = process.env.CLOUDBASE_FAQ_COLLECTION || "faqs";
 const packageCollection = process.env.CLOUDBASE_PACKAGE_COLLECTION || "packages";
 const leadCollection = process.env.CLOUDBASE_LEAD_COLLECTION || "leads";
@@ -318,17 +319,47 @@ function requireAdmin(req, res, next) {
   });
 }
 
-function getDouyinConfig() {
+function getDouyinSecretForApp(appId) {
+  const requestedAppId = asString(appId);
+  const secretMapText = asString(process.env.DOUYIN_APP_SECRETS);
+
+  if (secretMapText) {
+    try {
+      const secretMap = JSON.parse(secretMapText);
+      const mappedSecret = secretMap && typeof secretMap === "object"
+        ? asString(secretMap[requestedAppId])
+        : "";
+
+      if (mappedSecret) {
+        return mappedSecret;
+      }
+    } catch (error) {
+      console.error("Invalid DOUYIN_APP_SECRETS JSON", error);
+    }
+  }
+
+  const defaultAppId = asString(process.env.DOUYIN_APP_ID || process.env.TT_APP_ID);
+  const defaultSecret = asString(process.env.DOUYIN_APP_SECRET || process.env.TT_APP_SECRET);
+
+  return !requestedAppId || requestedAppId === defaultAppId
+    ? defaultSecret
+    : "";
+}
+
+function getDouyinConfig(douyinAppId) {
+  const appId = asString(douyinAppId) ||
+    asString(process.env.DOUYIN_APP_ID || process.env.TT_APP_ID);
+
   return {
-    appId: asString(process.env.DOUYIN_APP_ID || process.env.TT_APP_ID),
-    appSecret: asString(process.env.DOUYIN_APP_SECRET || process.env.TT_APP_SECRET),
+    appId,
+    appSecret: getDouyinSecretForApp(appId),
     code2SessionUrl: asString(process.env.DOUYIN_CODE2SESSION_URL) ||
       "https://developer.toutiao.com/api/apps/v2/jscode2session"
   };
 }
 
-async function exchangeDouyinCode(code) {
-  const config = getDouyinConfig();
+async function exchangeDouyinCode(code, douyinAppId) {
+  const config = getDouyinConfig(douyinAppId);
 
   if (!config.appId || !config.appSecret) {
     return {
@@ -466,6 +497,95 @@ function publicAdminUser(user) {
     email: user.email,
     name: user.name,
     role: user.role
+  };
+}
+
+function normalizeStudio(value) {
+  const source = value && typeof value === "object" ? value : {};
+
+  return {
+    id: asString(source._id || source.id),
+    studioId: asString(source.studioId || source.id || source._id),
+    name: asString(source.name || source.studioName),
+    status: asString(source.status) || "active",
+    douyinAppId: asString(source.douyinAppId || source.appId || source.ttAppId),
+    apiEnabled: source.apiEnabled !== false
+  };
+}
+
+async function getStudioById(studioId) {
+  const db = getDatabase();
+  const id = asString(studioId);
+
+  if (!db || !id) {
+    return null;
+  }
+
+  try {
+    const result = await db.collection(studioCollection)
+      .where({ studioId: id })
+      .limit(1)
+      .get();
+    const row = Array.isArray(result.data) ? result.data[0] : null;
+
+    return row ? normalizeStudio(row) : null;
+  } catch (error) {
+    console.error("CloudBase studio read failed", error);
+    return null;
+  }
+}
+
+function getDefaultStudioFallback(studioId) {
+  const id = asString(studioId);
+
+  if (id !== defaultStudioId) {
+    return null;
+  }
+
+  return {
+    studioId: defaultStudioId,
+    name: asString(process.env.DEFAULT_STUDIO_NAME) || "映白摄影",
+    status: "active",
+    douyinAppId: asString(process.env.DOUYIN_APP_ID || process.env.TT_APP_ID),
+    apiEnabled: true,
+    fallback: true
+  };
+}
+
+async function validateStudioRequest(studioId, douyinAppId) {
+  const id = asString(studioId) || defaultStudioId;
+  const appId = asString(douyinAppId);
+  const studio = await getStudioById(id) || getDefaultStudioFallback(id);
+
+  if (!studio) {
+    return {
+      ok: false,
+      status: 404,
+      error: "Studio not found"
+    };
+  }
+
+  if (studio.status !== "active" || !studio.apiEnabled) {
+    return {
+      ok: false,
+      status: 403,
+      error: "Studio is disabled"
+    };
+  }
+
+  if (studio.douyinAppId && appId && studio.douyinAppId !== appId) {
+    return {
+      ok: false,
+      status: 403,
+      error: "Douyin AppID does not match studio"
+    };
+  }
+
+  return {
+    ok: true,
+    studio,
+    studioId: studio.studioId || id,
+    douyinAppId: appId || studio.douyinAppId
   };
 }
 
@@ -1039,6 +1159,7 @@ function normalizeSessionState(value) {
   return {
     sessionId: asString(source.sessionId),
     studioId: asString(source.studioId),
+    douyinAppId: asString(source.douyinAppId),
     userId: asString(source.userId),
     anonymousId: asString(source.anonymousId),
     isAuthenticated: Boolean(source.isAuthenticated),
@@ -1305,6 +1426,7 @@ function hasLeadContact(lead) {
 async function captureAiLead({
   studioId,
   sessionId,
+  douyinAppId,
   user,
   message,
   aiResult,
@@ -1365,6 +1487,7 @@ async function captureAiLead({
     const lead = {
       studioId,
       sessionId,
+      douyinAppId: asString(douyinAppId),
       userId: user && user.userId ? user.userId : "",
       anonymousId: user && user.anonymousId ? user.anonymousId : "",
       isAuthenticated: Boolean(user && user.isAuthenticated),
@@ -1404,6 +1527,7 @@ async function captureAiLead({
 async function captureBookingLead({
   studioId,
   sessionId,
+  douyinAppId,
   user,
   sessionState,
   message
@@ -1462,6 +1586,7 @@ async function captureBookingLead({
     const lead = {
       studioId,
       sessionId,
+      douyinAppId: asString(douyinAppId),
       userId: user && user.userId ? user.userId : "",
       anonymousId: user && user.anonymousId ? user.anonymousId : "",
       isAuthenticated: Boolean(user && user.isAuthenticated),
@@ -1544,6 +1669,7 @@ function finalizeAiReply(reply, leadCapture) {
 }
 
 app.get("/health", (req, res) => {
+  const douyinConfig = getDouyinConfig();
   const envConfigured = Boolean(asString(process.env.CLOUDBASE_ENV_ID));
   const authConfigured = Boolean(
     asString(process.env.CLOUDBASE_APIKEY || process.env.CLOUDBASE_ACCESS_KEY) ||
@@ -1571,6 +1697,7 @@ app.get("/health", (req, res) => {
       collections: {
         faqs: faqCollection,
         packages: packageCollection,
+        studios: studioCollection,
         leads: leadCollection,
         chatMessages: chatCollection,
         chatSessions: chatSessionCollection,
@@ -1584,7 +1711,8 @@ app.get("/health", (req, res) => {
       legacyTokenConfigured: Boolean(adminApiToken)
     },
     douyinAuth: {
-      configured: Boolean(getDouyinConfig().appId && getDouyinConfig().appSecret),
+      configured: Boolean(douyinConfig.appId && douyinConfig.appSecret),
+      multiAppConfigured: Boolean(asString(process.env.DOUYIN_APP_SECRETS)),
       tokenConfigured: Boolean(douyinAuthTokenSecret)
     },
     ai: getAvailability(),
@@ -1594,7 +1722,8 @@ app.get("/health", (req, res) => {
 
 app.post("/api/photo-studio/auth/login", async (req, res) => {
   const code = asString(req.body.code);
-  const studioId = asString(req.body.studioId) || defaultStudioId;
+  const requestedStudioId = asString(req.body.studioId) || defaultStudioId;
+  const requestedDouyinAppId = asString(req.body.douyinAppId || req.body.appId);
   const anonymousId = asString(req.body.anonymousId).slice(0, 120);
 
   if (!code) {
@@ -1606,7 +1735,17 @@ app.post("/api/photo-studio/auth/login", async (req, res) => {
   }
 
   try {
-    const loginResult = await exchangeDouyinCode(code);
+    const studioCheck = await validateStudioRequest(requestedStudioId, requestedDouyinAppId);
+
+    if (!studioCheck.ok) {
+      res.status(studioCheck.status).json({
+        ok: false,
+        error: studioCheck.error
+      });
+      return;
+    }
+
+    const loginResult = await exchangeDouyinCode(code, studioCheck.douyinAppId);
 
     if (!loginResult.ok) {
       res.status(loginResult.configured ? 502 : 503).json({
@@ -1619,7 +1758,8 @@ app.post("/api/photo-studio/auth/login", async (req, res) => {
 
     const userId = `douyin_${sha256(loginResult.openid).slice(0, 32)}`;
     const user = {
-      studioId,
+      studioId: studioCheck.studioId,
+      douyinAppId: studioCheck.douyinAppId || "",
       userId,
       openid: loginResult.openid,
       unionid: loginResult.unionid || "",
@@ -1630,13 +1770,18 @@ app.post("/api/photo-studio/auth/login", async (req, res) => {
 
     res.json({
       ok: true,
+      studio: {
+        studioId: studioCheck.studioId,
+        name: studioCheck.studio.name,
+        douyinAppId: studioCheck.douyinAppId || ""
+      },
       user: {
         userId,
         anonymousId,
         platform: user.platform,
         isAuthenticated: true
       },
-      userToken: signUserToken(studioId, userId),
+      userToken: signUserToken(studioCheck.studioId, userId),
       storage
     });
   } catch (error) {
@@ -2478,7 +2623,7 @@ app.patch("/api/photo-studio/admin/knowledge/faqs/:faqId", requireAdmin, async (
     }
 
     await db.collection(faqCollection).doc(faqId).update(update);
-    invalidateKnowledgeCache();
+    invalidateKnowledgeCache(studioId);
     res.json({
       ok: true,
       type: "faq",
@@ -2612,7 +2757,7 @@ app.patch("/api/photo-studio/admin/knowledge/packages/:packageId", requireAdmin,
     }
 
     await db.collection(packageCollection).doc(packageId).update(update);
-    invalidateKnowledgeCache();
+    invalidateKnowledgeCache(studioId);
     res.json({
       ok: true,
       type: "package",
@@ -2633,10 +2778,10 @@ app.post("/api/photo-studio/chat", async (req, res) => {
   const serviceKey = asString(req.body.serviceKey);
   const serviceType = asString(req.body.serviceType);
   const sessionId = asString(req.body.sessionId);
-  const studioId = asString(req.body.studioId) || defaultStudioId;
+  const requestedStudioId = asString(req.body.studioId) || defaultStudioId;
+  const requestedDouyinAppId = asString(req.body.douyinAppId || req.body.appId);
   const history = Array.isArray(req.body.history) ? req.body.history : [];
   const conversationId = sessionId || `session-${Date.now()}`;
-  const requestUser = verifyRequestUser(req.body, studioId);
 
   if (!message) {
     res.status(400).json({
@@ -2647,6 +2792,43 @@ app.post("/api/photo-studio/chat", async (req, res) => {
   }
 
   try {
+    const studioCheck = await withTimeout(
+      () => validateStudioRequest(requestedStudioId, requestedDouyinAppId),
+      800,
+      (() => {
+        const fallbackStudio = getDefaultStudioFallback(requestedStudioId);
+        const defaultAppId = fallbackStudio && fallbackStudio.douyinAppId;
+        const appIdMatchesFallback = !requestedDouyinAppId ||
+          !defaultAppId ||
+          requestedDouyinAppId === defaultAppId;
+
+        return {
+          ok: Boolean(fallbackStudio && appIdMatchesFallback),
+          status: appIdMatchesFallback ? 403 : 403,
+          error: appIdMatchesFallback
+            ? "Studio validation timed out"
+            : "Douyin AppID does not match studio",
+          studioId: requestedStudioId,
+          douyinAppId: requestedDouyinAppId,
+          studio: fallbackStudio || {
+            studioId: requestedStudioId,
+            name: "",
+            douyinAppId: requestedDouyinAppId
+          }
+        };
+      })()
+    );
+
+    if (!studioCheck.ok) {
+      res.status(studioCheck.status || 403).json({
+        ok: false,
+        error: studioCheck.error || "Studio validation failed"
+      });
+      return;
+    }
+
+    const studioId = studioCheck.studioId;
+    const requestUser = verifyRequestUser(req.body, studioId);
     const storedSession = await withTimeout(
       () => readSessionState(studioId, conversationId),
       chatOperationTimeouts.chatSessionRead,
@@ -2676,6 +2858,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         ...(storedSession || {}),
         sessionId: conversationId,
         studioId,
+        douyinAppId: studioCheck.douyinAppId || (storedSession && storedSession.douyinAppId),
         userId: requestUser.userId || (storedSession && storedSession.userId),
         anonymousId: requestUser.anonymousId || (storedSession && storedSession.anonymousId),
         isAuthenticated: requestUser.isAuthenticated ||
@@ -2752,6 +2935,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       bookingLead = await captureBookingLead({
         studioId,
         sessionId: conversationId,
+        douyinAppId: studioCheck.douyinAppId || "",
         user: requestUser,
         sessionState,
         message
@@ -2813,6 +2997,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         () => captureAiLead({
           studioId,
           sessionId: conversationId,
+          douyinAppId: studioCheck.douyinAppId || "",
           user: requestUser,
           message,
           aiResult: effectiveAiResult,
@@ -2890,6 +3075,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       () => saveChatMessage({
         studioId,
         sessionId: conversationId,
+        douyinAppId: studioCheck.douyinAppId || "",
         userId: sessionState.userId || "",
         anonymousId: sessionState.anonymousId || "",
         isAuthenticated: Boolean(sessionState.isAuthenticated),
@@ -2951,6 +3137,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       unanswered = await withTimeout(
         () => saveUnansweredQuestion({
           studioId,
+          douyinAppId: studioCheck.douyinAppId || "",
           question: message,
           questionKey: normalizeQuestion(message),
           sampleReply: reply,
@@ -2983,6 +3170,11 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       needHuman,
       leadIntent,
       sessionId: conversationId,
+      studio: {
+        studioId,
+        name: studioCheck.studio && studioCheck.studio.name,
+        douyinAppId: studioCheck.douyinAppId || ""
+      },
       user: {
         userId: sessionState.userId || "",
         anonymousId: sessionState.anonymousId || "",
@@ -3047,13 +3239,14 @@ app.post("/api/photo-studio/chat", async (req, res) => {
 });
 
 app.post("/api/photo-studio/leads", async (req, res) => {
-  const studioId = asString(req.body.studioId) || defaultStudioId;
-  const requestUser = verifyRequestUser(req.body, studioId);
+  const requestedStudioId = asString(req.body.studioId) || defaultStudioId;
+  const requestedDouyinAppId = asString(req.body.douyinAppId || req.body.appId);
   const lead = {
-    studioId,
-    userId: requestUser.userId,
-    anonymousId: requestUser.anonymousId,
-    isAuthenticated: requestUser.isAuthenticated,
+    studioId: requestedStudioId,
+    douyinAppId: requestedDouyinAppId,
+    userId: "",
+    anonymousId: "",
+    isAuthenticated: false,
     name: asString(req.body.name),
     contact: asString(req.body.contact),
     serviceType: asString(req.body.serviceType),
@@ -3074,6 +3267,22 @@ app.post("/api/photo-studio/leads", async (req, res) => {
   }
 
   try {
+    const studioCheck = await validateStudioRequest(requestedStudioId, requestedDouyinAppId);
+
+    if (!studioCheck.ok) {
+      res.status(studioCheck.status || 403).json({
+        ok: false,
+        error: studioCheck.error || "Studio validation failed"
+      });
+      return;
+    }
+
+    const requestUser = verifyRequestUser(req.body, studioCheck.studioId);
+    lead.studioId = studioCheck.studioId;
+    lead.douyinAppId = studioCheck.douyinAppId || "";
+    lead.userId = requestUser.userId;
+    lead.anonymousId = requestUser.anonymousId;
+    lead.isAuthenticated = requestUser.isAuthenticated;
     const storage = await saveLead(lead);
     let notification;
 
