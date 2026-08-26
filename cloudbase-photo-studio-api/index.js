@@ -1511,8 +1511,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     });
     const shouldUseAi = Boolean(
       aiAvailability.enabled &&
-      !greeting &&
-      (baseMatchType === "none" || Boolean(contact))
+      !greeting
     );
     const aiResult = shouldUseAi
       ? await generateReply({
