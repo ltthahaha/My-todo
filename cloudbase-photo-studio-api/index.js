@@ -16,7 +16,17 @@ const chatCollection = process.env.CLOUDBASE_CHAT_COLLECTION || "chat_messages";
 const chatSessionCollection = process.env.CLOUDBASE_CHAT_SESSION_COLLECTION || "chat_sessions";
 const unansweredCollection = process.env.CLOUDBASE_UNANSWERED_COLLECTION || "unanswered_questions";
 const douyinUserCollection = process.env.CLOUDBASE_DOUYIN_USER_COLLECTION || "douyin_users";
+const adminUserCollection = process.env.CLOUDBASE_ADMIN_USER_COLLECTION || "admin_users";
 const adminApiToken = asString(process.env.ADMIN_API_TOKEN);
+const adminSessionSecret = asString(
+  process.env.ADMIN_SESSION_SECRET ||
+    process.env.AUTH_TOKEN_SECRET ||
+    process.env.ADMIN_API_TOKEN
+);
+const adminSessionTtlSeconds = Math.min(
+  Math.max(Number(process.env.ADMIN_SESSION_TTL_SECONDS) || 7 * 24 * 60 * 60, 60 * 60),
+  30 * 24 * 60 * 60
+);
 const douyinAuthTokenSecret = asString(
   process.env.DOUYIN_AUTH_TOKEN_SECRET ||
     process.env.AUTH_TOKEN_SECRET ||
@@ -57,6 +67,35 @@ function sha256(value) {
   return crypto.createHash("sha256").update(asString(value)).digest("hex");
 }
 
+function base64UrlEncode(value) {
+  return Buffer.from(value)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value) {
+  const normalized = asString(value).replace(/-/g, "+").replace(/_/g, "/");
+  const padding = "=".repeat((4 - normalized.length % 4) % 4);
+
+  return Buffer.from(normalized + padding, "base64").toString("utf8");
+}
+
+function safeEqual(expected, actual) {
+  if (!expected || !actual) {
+    return false;
+  }
+
+  const expectedBuffer = Buffer.from(expected);
+  const actualBuffer = Buffer.from(actual);
+
+  return (
+    expectedBuffer.length === actualBuffer.length &&
+    crypto.timingSafeEqual(expectedBuffer, actualBuffer)
+  );
+}
+
 function signUserToken(studioId, userId) {
   if (!douyinAuthTokenSecret || !userId) {
     return "";
@@ -87,6 +126,96 @@ function verifyRequestUser(source, studioId) {
     anonymousId,
     isAuthenticated: false
   };
+}
+
+function signAdminSessionPayload(payloadPart) {
+  return crypto
+    .createHmac("sha256", adminSessionSecret)
+    .update(payloadPart)
+    .digest("base64url");
+}
+
+function createAdminSessionToken(user) {
+  if (!adminSessionSecret || !user.userId || !user.studioId) {
+    return "";
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const payload = {
+    sub: user.userId,
+    email: user.email,
+    studioId: user.studioId,
+    role: user.role || "staff",
+    iat: now,
+    exp: now + adminSessionTtlSeconds
+  };
+  const payloadPart = base64UrlEncode(JSON.stringify(payload));
+  const signature = signAdminSessionPayload(payloadPart);
+
+  return `v1.${payloadPart}.${signature}`;
+}
+
+function verifyAdminSessionToken(token) {
+  const source = asString(token);
+  const parts = source.split(".");
+
+  if (!adminSessionSecret || parts.length !== 3 || parts[0] !== "v1") {
+    return null;
+  }
+
+  const expectedSignature = signAdminSessionPayload(parts[1]);
+
+  if (!safeEqual(expectedSignature, parts[2])) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(base64UrlDecode(parts[1]));
+    const now = Math.floor(Date.now() / 1000);
+    const expiresAt = Number(payload.exp);
+
+    if (
+      !payload ||
+      !payload.sub ||
+      !payload.studioId ||
+      !Number.isFinite(expiresAt) ||
+      expiresAt <= now
+    ) {
+      return null;
+    }
+
+    return {
+      userId: asString(payload.sub),
+      email: asString(payload.email),
+      studioId: asString(payload.studioId),
+      role: asString(payload.role) || "staff",
+      expiresAt: new Date(expiresAt * 1000).toISOString()
+    };
+  } catch {
+    return null;
+  }
+}
+
+function verifyPassword(password, passwordHash) {
+  const parts = asString(passwordHash).split("$");
+
+  if (parts.length !== 4 || parts[0] !== "pbkdf2") {
+    return false;
+  }
+
+  const iterations = Number(parts[1]);
+  const salt = parts[2];
+  const expected = parts[3];
+
+  if (!iterations || !salt || !expected) {
+    return false;
+  }
+
+  const actual = crypto
+    .pbkdf2Sync(asString(password), salt, iterations, 32, "sha256")
+    .toString("hex");
+
+  return safeEqual(expected, actual);
 }
 
 function withTimeout(task, timeoutMs, fallback) {
@@ -130,22 +259,46 @@ function readAdminToken(req) {
   return headerToken || bearerToken;
 }
 
+function readBearerToken(req) {
+  const authorization = asString(req.get("authorization"));
+  return authorization.startsWith("Bearer ")
+    ? authorization.slice(7).trim()
+    : "";
+}
+
 function tokenMatches(expected, actual) {
-  if (!expected || !actual) {
-    return false;
-  }
+  return safeEqual(expected, actual);
+}
 
-  const expectedBuffer = Buffer.from(expected);
-  const actualBuffer = Buffer.from(actual);
-
-  return (
-    expectedBuffer.length === actualBuffer.length &&
-    crypto.timingSafeEqual(expectedBuffer, actualBuffer)
-  );
+function getAdminStudioId(req) {
+  return (req.adminContext && req.adminContext.studioId) ||
+    asString(req.query.studioId || req.body.studioId) ||
+    defaultStudioId;
 }
 
 function requireAdmin(req, res, next) {
-  if (!adminApiToken) {
+  const session = verifyAdminSessionToken(readBearerToken(req));
+
+  if (session) {
+    req.adminContext = {
+      ...session,
+      authType: "session"
+    };
+    next();
+    return;
+  }
+
+  if (adminApiToken && tokenMatches(adminApiToken, readAdminToken(req))) {
+    req.adminContext = {
+      studioId: asString(req.query.studioId || req.body.studioId) || defaultStudioId,
+      role: "legacy_admin",
+      authType: "api_token"
+    };
+    next();
+    return;
+  }
+
+  if (!adminSessionSecret && !adminApiToken) {
     res.status(503).json({
       ok: false,
       error: "Admin API is not configured"
@@ -153,15 +306,10 @@ function requireAdmin(req, res, next) {
     return;
   }
 
-  if (!tokenMatches(adminApiToken, readAdminToken(req))) {
-    res.status(401).json({
-      ok: false,
-      error: "Unauthorized"
-    });
-    return;
-  }
-
-  next();
+  res.status(401).json({
+    ok: false,
+    error: "Unauthorized"
+  });
 }
 
 function getDouyinConfig() {
@@ -269,6 +417,50 @@ async function saveDouyinUser(user) {
       reason: error.message || "Douyin user write failed"
     };
   }
+}
+
+function normalizeAdminUser(value) {
+  const source = value && typeof value === "object" ? value : {};
+
+  return {
+    id: asString(source._id || source.id),
+    userId: asString(source.userId || source._id || source.id),
+    studioId: asString(source.studioId) || defaultStudioId,
+    email: asString(source.email).toLowerCase(),
+    name: asString(source.name),
+    role: asString(source.role) || "staff",
+    status: asString(source.status) || "active",
+    passwordHash: asString(source.passwordHash)
+  };
+}
+
+async function findAdminUserByEmail(email) {
+  const db = getDatabase();
+
+  if (!db) {
+    throw new Error("CloudBase database is not configured");
+  }
+
+  const result = await db.collection(adminUserCollection)
+    .where({
+      email: asString(email).toLowerCase(),
+      status: "active"
+    })
+    .limit(1)
+    .get();
+  const row = Array.isArray(result.data) ? result.data[0] : null;
+
+  return row ? normalizeAdminUser(row) : null;
+}
+
+function publicAdminUser(user) {
+  return {
+    userId: user.userId,
+    studioId: user.studioId,
+    email: user.email,
+    name: user.name,
+    role: user.role
+  };
 }
 
 function getDatabase() {
@@ -1004,6 +1196,24 @@ async function countDocuments(collectionName, filter) {
   }
 }
 
+async function findAdminRecord(collectionName, recordId, studioId) {
+  const db = getDatabase();
+
+  if (!db || !recordId || !studioId) {
+    return null;
+  }
+
+  const result = await db.collection(collectionName)
+    .where({
+      _id: recordId,
+      studioId
+    })
+    .limit(1)
+    .get();
+
+  return Array.isArray(result.data) ? result.data[0] || null : null;
+}
+
 function buildLeadText(lead) {
   return [
     "新摄影店预约线索",
@@ -1359,8 +1569,13 @@ app.get("/health", (req, res) => {
         chatMessages: chatCollection,
         chatSessions: chatSessionCollection,
         unansweredQuestions: unansweredCollection,
-        douyinUsers: douyinUserCollection
+        douyinUsers: douyinUserCollection,
+        adminUsers: adminUserCollection
       }
+    },
+    adminAuth: {
+      sessionConfigured: Boolean(adminSessionSecret),
+      legacyTokenConfigured: Boolean(adminApiToken)
     },
     douyinAuth: {
       configured: Boolean(getDouyinConfig().appId && getDouyinConfig().appSecret),
@@ -1427,6 +1642,74 @@ app.post("/api/photo-studio/auth/login", async (req, res) => {
   }
 });
 
+app.post("/api/photo-studio/admin/auth/login", async (req, res) => {
+  const email = asString(req.body.email).toLowerCase();
+  const password = asString(req.body.password);
+
+  if (!email || !password) {
+    res.status(400).json({
+      ok: false,
+      error: "Missing email or password"
+    });
+    return;
+  }
+
+  if (!adminSessionSecret) {
+    res.status(503).json({
+      ok: false,
+      error: "Admin session is not configured"
+    });
+    return;
+  }
+
+  try {
+    const user = await findAdminUserByEmail(email);
+
+    if (!user || !verifyPassword(password, user.passwordHash)) {
+      res.status(401).json({
+        ok: false,
+        error: "Invalid email or password"
+      });
+      return;
+    }
+
+    const token = createAdminSessionToken(user);
+
+    res.json({
+      ok: true,
+      token,
+      expiresIn: adminSessionTtlSeconds,
+      user: publicAdminUser(user)
+    });
+  } catch (error) {
+    console.error("Admin login failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Admin login failed"
+    });
+  }
+});
+
+app.get("/api/photo-studio/admin/auth/me", requireAdmin, (req, res) => {
+  res.json({
+    ok: true,
+    authType: req.adminContext.authType,
+    user: {
+      userId: req.adminContext.userId || "",
+      studioId: req.adminContext.studioId,
+      email: req.adminContext.email || "",
+      role: req.adminContext.role,
+      expiresAt: req.adminContext.expiresAt || ""
+    }
+  });
+});
+
+app.post("/api/photo-studio/admin/auth/logout", requireAdmin, (req, res) => {
+  res.json({
+    ok: true
+  });
+});
+
 app.get("/api/photo-studio/knowledge", async (req, res) => {
   const studioId = asString(req.query.studioId) || defaultStudioId;
 
@@ -1449,7 +1732,7 @@ app.get("/api/photo-studio/knowledge", async (req, res) => {
 });
 
 app.get("/api/photo-studio/admin/leads", requireAdmin, async (req, res) => {
-  const studioId = asString(req.query.studioId) || defaultStudioId;
+  const studioId = getAdminStudioId(req);
   const status = asString(req.query.status);
   const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
   const db = getDatabase();
@@ -1491,6 +1774,7 @@ app.get("/api/photo-studio/admin/leads", requireAdmin, async (req, res) => {
 
 app.patch("/api/photo-studio/admin/leads/:leadId", requireAdmin, async (req, res) => {
   const leadId = asString(req.params.leadId);
+  const studioId = getAdminStudioId(req);
   const status = asString(req.body.status);
   const staffNote = asString(req.body.staffNote);
   const allowedStatuses = new Set([
@@ -1539,6 +1823,16 @@ app.patch("/api/photo-studio/admin/leads/:leadId", requireAdmin, async (req, res
   }
 
   try {
+    const existing = await findAdminRecord(leadCollection, leadId, studioId);
+
+    if (!existing) {
+      res.status(404).json({
+        ok: false,
+        error: "Lead not found"
+      });
+      return;
+    }
+
     await db.collection(leadCollection).doc(leadId).update(update);
     res.json({
       ok: true,
@@ -1702,7 +1996,7 @@ function buildCustomerFilter(studioId, customerKey) {
 }
 
 app.get("/api/photo-studio/admin/customers", requireAdmin, async (req, res) => {
-  const studioId = asString(req.query.studioId) || defaultStudioId;
+  const studioId = getAdminStudioId(req);
   const limit = Math.min(Math.max(Number(req.query.limit) || 80, 1), 200);
   const db = getDatabase();
 
@@ -1753,7 +2047,7 @@ app.get("/api/photo-studio/admin/customers", requireAdmin, async (req, res) => {
 });
 
 app.get("/api/photo-studio/admin/customers/:customerKey", requireAdmin, async (req, res) => {
-  const studioId = asString(req.query.studioId) || defaultStudioId;
+  const studioId = getAdminStudioId(req);
   const customerKey = asString(req.params.customerKey);
   const db = getDatabase();
 
@@ -1821,7 +2115,7 @@ app.get("/api/photo-studio/admin/customers/:customerKey", requireAdmin, async (r
 });
 
 app.get("/api/photo-studio/admin/stats", requireAdmin, async (req, res) => {
-  const studioId = asString(req.query.studioId) || defaultStudioId;
+  const studioId = getAdminStudioId(req);
   const db = getDatabase();
 
   if (!db) {
@@ -1903,7 +2197,7 @@ app.get("/api/photo-studio/admin/stats", requireAdmin, async (req, res) => {
 });
 
 app.get("/api/photo-studio/admin/unanswered", requireAdmin, async (req, res) => {
-  const studioId = asString(req.query.studioId) || defaultStudioId;
+  const studioId = getAdminStudioId(req);
   const status = asString(req.query.status) || "open";
   const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
   const db = getDatabase();
@@ -1954,6 +2248,7 @@ app.get("/api/photo-studio/admin/unanswered", requireAdmin, async (req, res) => 
 
 app.patch("/api/photo-studio/admin/unanswered/:questionId", requireAdmin, async (req, res) => {
   const questionId = asString(req.params.questionId);
+  const studioId = getAdminStudioId(req);
   const status = asString(req.body.status);
   const staffNote = asString(req.body.staffNote);
   const allowedStatuses = new Set(["open", "reviewed", "resolved", "ignored"]);
@@ -1984,6 +2279,16 @@ app.patch("/api/photo-studio/admin/unanswered/:questionId", requireAdmin, async 
   }
 
   try {
+    const existing = await findAdminRecord(unansweredCollection, questionId, studioId);
+
+    if (!existing) {
+      res.status(404).json({
+        ok: false,
+        error: "Unanswered question not found"
+      });
+      return;
+    }
+
     const update = {
       status,
       staffNote,
@@ -2005,7 +2310,7 @@ app.patch("/api/photo-studio/admin/unanswered/:questionId", requireAdmin, async 
 });
 
 app.get("/api/photo-studio/admin/knowledge", requireAdmin, async (req, res) => {
-  const studioId = asString(req.query.studioId) || defaultStudioId;
+  const studioId = getAdminStudioId(req);
   const type = asString(req.query.type) || "all";
   const db = getDatabase();
 
@@ -2058,7 +2363,7 @@ app.get("/api/photo-studio/admin/knowledge", requireAdmin, async (req, res) => {
 });
 
 app.post("/api/photo-studio/admin/knowledge/faqs", requireAdmin, async (req, res) => {
-  const studioId = asString(req.body.studioId) || defaultStudioId;
+  const studioId = getAdminStudioId(req);
   const category = asString(req.body.category);
   const keywords = normalizeKeywords(req.body.keywords);
   const answer = asString(req.body.answer);
@@ -2111,6 +2416,7 @@ app.post("/api/photo-studio/admin/knowledge/faqs", requireAdmin, async (req, res
 
 app.patch("/api/photo-studio/admin/knowledge/faqs/:faqId", requireAdmin, async (req, res) => {
   const faqId = asString(req.params.faqId);
+  const studioId = getAdminStudioId(req);
   const db = getDatabase();
   const update = cleanRecordFields(req.body, ["category", "answer"]);
   const keywords = normalizeKeywords(req.body.keywords);
@@ -2155,6 +2461,16 @@ app.patch("/api/photo-studio/admin/knowledge/faqs/:faqId", requireAdmin, async (
   }
 
   try {
+    const existing = await findAdminRecord(faqCollection, faqId, studioId);
+
+    if (!existing) {
+      res.status(404).json({
+        ok: false,
+        error: "FAQ not found"
+      });
+      return;
+    }
+
     await db.collection(faqCollection).doc(faqId).update(update);
     invalidateKnowledgeCache();
     res.json({
@@ -2173,7 +2489,7 @@ app.patch("/api/photo-studio/admin/knowledge/faqs/:faqId", requireAdmin, async (
 });
 
 app.post("/api/photo-studio/admin/knowledge/packages", requireAdmin, async (req, res) => {
-  const studioId = asString(req.body.studioId) || defaultStudioId;
+  const studioId = getAdminStudioId(req);
   const name = asString(req.body.name);
   const category = asString(req.body.category);
   const price = asString(req.body.price);
@@ -2230,6 +2546,7 @@ app.post("/api/photo-studio/admin/knowledge/packages", requireAdmin, async (req,
 
 app.patch("/api/photo-studio/admin/knowledge/packages/:packageId", requireAdmin, async (req, res) => {
   const packageId = asString(req.params.packageId);
+  const studioId = getAdminStudioId(req);
   const db = getDatabase();
   const update = cleanRecordFields(req.body, [
     "name",
@@ -2278,6 +2595,16 @@ app.patch("/api/photo-studio/admin/knowledge/packages/:packageId", requireAdmin,
   }
 
   try {
+    const existing = await findAdminRecord(packageCollection, packageId, studioId);
+
+    if (!existing) {
+      res.status(404).json({
+        ok: false,
+        error: "Package not found"
+      });
+      return;
+    }
+
     await db.collection(packageCollection).doc(packageId).update(update);
     invalidateKnowledgeCache();
     res.json({

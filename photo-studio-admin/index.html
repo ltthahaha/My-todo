@@ -41,7 +41,18 @@
     h1, h2, p { margin: 0; }
     h1 { font-size: 24px; line-height: 1.2; }
     .subtitle { color: var(--muted); margin-top: 6px; }
-    .auth { display: flex; gap: 8px; min-width: min(420px, 100%); }
+    .auth {
+      display: grid;
+      grid-template-columns: minmax(150px, 1fr) minmax(130px, 1fr) auto auto;
+      gap: 8px;
+      min-width: min(560px, 100%);
+    }
+    .auth-status {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
     input, select, button {
       min-height: 38px;
       border: 1px solid var(--line);
@@ -430,7 +441,8 @@
     @media (max-width: 720px) {
       main { width: min(100% - 20px, 1180px); margin: 16px auto; }
       header, .toolbar { display: block; }
-      .auth { margin-top: 16px; min-width: 0; }
+      .auth { grid-template-columns: 1fr; margin-top: 16px; min-width: 0; }
+      .auth-status { text-align: left; }
       .filters { margin-bottom: 10px; }
       .knowledge-grid { grid-template-columns: 1fr; }
       .knowledge-toolbar { display: block; }
@@ -513,11 +525,14 @@
     <header>
       <div>
         <h1>摄影店线索管理</h1>
-        <p class="subtitle">查看预约意向，跟进客户状态和内部备注。</p>
+        <p class="subtitle">登录门店账号，查看客户咨询、预约线索和运营数据。</p>
       </div>
       <form class="auth" id="authForm">
-        <input id="apiToken" type="password" placeholder="输入 ADMIN_API_TOKEN" autocomplete="off" required>
-        <button class="primary" type="submit">连接</button>
+        <input id="adminEmail" type="email" placeholder="邮箱" autocomplete="username" required>
+        <input id="adminPassword" type="password" placeholder="密码" autocomplete="current-password" required>
+        <button class="primary" id="loginButton" type="submit">登录</button>
+        <button id="logoutButton" class="hidden" type="button">退出</button>
+        <div class="auth-status" id="authStatus">请输入门店账号登录。</div>
       </form>
     </header>
 
@@ -547,7 +562,7 @@
             <p class="subtitle">优先显示最近咨询客户。</p>
           </div>
           <div id="customerList" class="customer-list">
-            <div class="empty">输入管理令牌后连接。</div>
+            <div class="empty">请输入门店账号登录。</div>
           </div>
         </aside>
 
@@ -591,7 +606,7 @@
       </div>
 
       <section class="table-wrap">
-        <div class="empty" id="emptyState">输入管理令牌后连接。</div>
+        <div class="empty" id="emptyState">请输入门店账号登录。</div>
         <div class="error hidden" id="errorState"></div>
         <table class="hidden" id="leadTable">
           <thead>
@@ -699,7 +714,7 @@
             </select>
           </div>
         </div>
-        <div id="unansweredEmpty" class="knowledge-empty">输入管理令牌后连接。</div>
+        <div id="unansweredEmpty" class="knowledge-empty">请输入门店账号登录。</div>
         <div id="unansweredList" class="question-list"></div>
       </section>
     </section>
@@ -743,7 +758,8 @@
       resolved: "已解决",
       ignored: "已忽略"
     };
-    let apiToken = sessionStorage.getItem("photoStudioAdminToken") || "";
+    let apiToken = "";
+    let adminSession = null;
     let leads = [];
     let faqs = [];
     let packages = [];
@@ -755,10 +771,56 @@
     let currentCustomerDetail = null;
 
     const $ = (selector) => document.querySelector(selector);
-    const tokenInput = $("#apiToken");
+    const emailInput = $("#adminEmail");
+    const passwordInput = $("#adminPassword");
     const statusFilter = $("#statusFilter");
     const unansweredStatusFilter = $("#unansweredStatusFilter");
-    tokenInput.value = apiToken;
+
+    function readStoredAdminSession() {
+      try {
+        const stored = JSON.parse(sessionStorage.getItem("photoStudioAdminSession") || "null");
+        return stored && stored.token ? stored : null;
+      } catch {
+        return null;
+      }
+    }
+
+    adminSession = readStoredAdminSession();
+
+    function hasAdminAuth() {
+      return Boolean((adminSession && adminSession.token) || apiToken);
+    }
+
+    function getCurrentStudioId() {
+      return adminSession && adminSession.user && adminSession.user.studioId
+        ? adminSession.user.studioId
+        : STUDIO_ID;
+    }
+
+    function setAuthUi() {
+      const loggedIn = Boolean(adminSession && adminSession.token);
+      emailInput.classList.toggle("hidden", loggedIn);
+      passwordInput.classList.toggle("hidden", loggedIn);
+      $("#loginButton").classList.toggle("hidden", loggedIn);
+      $("#logoutButton").classList.toggle("hidden", !loggedIn);
+      $("#authStatus").textContent = loggedIn
+        ? `${adminSession.user.name || adminSession.user.email || "已登录"} · ${adminSession.user.role || "staff"} · ${adminSession.user.studioId}`
+        : "请输入门店账号登录。";
+    }
+
+    function storeAdminSession(session) {
+      adminSession = session;
+      sessionStorage.setItem("photoStudioAdminSession", JSON.stringify(session));
+      setAuthUi();
+    }
+
+    function clearAdminSession() {
+      adminSession = null;
+      apiToken = "";
+      sessionStorage.removeItem("photoStudioAdminSession");
+      sessionStorage.removeItem("photoStudioAdminToken");
+      setAuthUi();
+    }
 
     function showToast(message) {
       const toast = $("#toast");
@@ -948,9 +1010,14 @@
     async function request(path, options = {}) {
       const method = (options.method || "GET").toUpperCase();
       const headers = {
-        "X-Admin-Token": apiToken,
         ...(options.headers || {})
       };
+
+      if (adminSession && adminSession.token) {
+        headers.Authorization = `Bearer ${adminSession.token}`;
+      } else if (apiToken) {
+        headers["X-Admin-Token"] = apiToken;
+      }
 
       if (method !== "GET" && method !== "HEAD") {
         headers["Content-Type"] = "application/json";
@@ -1019,7 +1086,7 @@
     }
 
     async function loadLeads() {
-      if (!apiToken) {
+      if (!hasAdminAuth()) {
         $("#count").textContent = "尚未连接";
         return;
       }
@@ -1027,7 +1094,7 @@
       $("#refreshButton").disabled = true;
       try {
         const query = new URLSearchParams({
-          studioId: STUDIO_ID,
+          studioId: getCurrentStudioId(),
           status: statusFilter.value
         });
         const data = await request(`/api/photo-studio/admin/leads?${query}`);
@@ -1047,7 +1114,7 @@
     }
 
     async function loadCustomers() {
-      if (!apiToken) {
+      if (!hasAdminAuth()) {
         $("#customerCount").textContent = "尚未连接";
         return;
       }
@@ -1055,7 +1122,7 @@
       $("#refreshCustomersButton").disabled = true;
       try {
         const query = new URLSearchParams({
-          studioId: STUDIO_ID,
+          studioId: getCurrentStudioId(),
           limit: "80"
         });
         const data = await request(`/api/photo-studio/admin/customers?${query}`);
@@ -1080,7 +1147,7 @@
     }
 
     async function loadCustomerDetail(customerKey, options = {}) {
-      if (!apiToken || !customerKey) return;
+      if (!hasAdminAuth() || !customerKey) return;
 
       currentCustomerKey = customerKey;
       if (!options.keepList) {
@@ -1091,7 +1158,7 @@
       $("#customerDetail").innerHTML = '<div class="empty">正在加载客户资料...</div>';
 
       try {
-        const query = new URLSearchParams({ studioId: STUDIO_ID });
+        const query = new URLSearchParams({ studioId: getCurrentStudioId() });
         const data = await request(`/api/photo-studio/admin/customers/${encodeURIComponent(customerKey)}?${query}`);
         currentCustomerDetail = data;
         renderCustomerDetail(data);
@@ -1183,12 +1250,12 @@
     }
 
     async function loadKnowledge() {
-      if (!apiToken) return;
+      if (!hasAdminAuth()) return;
 
       $("#refreshKnowledgeButton").disabled = true;
       try {
         const query = new URLSearchParams({
-          studioId: STUDIO_ID,
+          studioId: getCurrentStudioId(),
           type: "all"
         });
         const data = await request(`/api/photo-studio/admin/knowledge?${query}`);
@@ -1259,13 +1326,13 @@
     }
 
     async function loadAnalytics() {
-      if (!apiToken) return;
+      if (!hasAdminAuth()) return;
 
       $("#refreshAnalyticsButton").disabled = true;
       try {
-        const statsQuery = new URLSearchParams({ studioId: STUDIO_ID });
+        const statsQuery = new URLSearchParams({ studioId: getCurrentStudioId() });
         const questionQuery = new URLSearchParams({
-          studioId: STUDIO_ID,
+          studioId: getCurrentStudioId(),
           status: unansweredStatusFilter.value
         });
         const [statsData, questionsData] = await Promise.all([
@@ -1344,7 +1411,7 @@
         const faqData = await request("/api/photo-studio/admin/knowledge/faqs", {
           method: "POST",
           body: JSON.stringify({
-            studioId: STUDIO_ID,
+            studioId: getCurrentStudioId(),
             category: $("#unansweredFaqCategory").value,
             keywords: $("#unansweredFaqKeywords").value,
             answer: $("#unansweredFaqAnswer").value
@@ -1385,7 +1452,7 @@
         await request("/api/photo-studio/admin/knowledge/faqs", {
           method: "POST",
           body: JSON.stringify({
-            studioId: STUDIO_ID,
+            studioId: getCurrentStudioId(),
             category: $("#faqCategory").value,
             keywords: $("#faqKeywords").value,
             answer: $("#faqAnswer").value
@@ -1410,7 +1477,7 @@
         await request("/api/photo-studio/admin/knowledge/packages", {
           method: "POST",
           body: JSON.stringify({
-            studioId: STUDIO_ID,
+            studioId: getCurrentStudioId(),
             name: $("#packageName").value,
             category: $("#packageCategory").value,
             price: $("#packagePrice").value,
@@ -1531,15 +1598,115 @@
       }
     }
 
-    $("#authForm").addEventListener("submit", (event) => {
-      event.preventDefault();
-      apiToken = tokenInput.value.trim();
-      sessionStorage.setItem("photoStudioAdminToken", apiToken);
+    function clearAdminData() {
+      customers = [];
+      leads = [];
+      faqs = [];
+      packages = [];
+      analyticsStats = null;
+      unansweredQuestions = [];
+      currentCustomerKey = "";
+      currentCustomerDetail = null;
+      $("#customerCount").textContent = "尚未连接";
+      $("#customerList").innerHTML = '<div class="empty">请输入门店账号登录。</div>';
+      renderCustomerDetail(null);
+      $("#count").textContent = "尚未连接";
+      $("#leadTable").classList.add("hidden");
+      $("#emptyState").classList.remove("hidden");
+      $("#emptyState").textContent = "请输入门店账号登录。";
+      renderStats();
+      $("#unansweredList").innerHTML = "";
+      $("#unansweredEmpty").textContent = "请输入门店账号登录。";
+      $("#unansweredEmpty").classList.remove("hidden");
+    }
+
+    function loadAllAdminData() {
       loadCustomers();
       loadLeads();
       loadKnowledge();
       loadAnalytics();
+    }
+
+    async function loginAdmin(event) {
+      event.preventDefault();
+      const button = $("#loginButton");
+      button.disabled = true;
+      $("#authStatus").textContent = "正在登录...";
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/photo-studio/admin/auth/login`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            email: emailInput.value.trim(),
+            password: passwordInput.value
+          })
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.error || `登录失败：${response.status}`);
+        }
+
+        storeAdminSession({
+          token: data.token,
+          user: data.user,
+          expiresAt: Date.now() + Number(data.expiresIn || 0) * 1000
+        });
+        passwordInput.value = "";
+        showToast("登录成功");
+        loadAllAdminData();
+      } catch (error) {
+        $("#authStatus").textContent = error instanceof TypeError
+          ? "浏览器无法访问接口，请检查 CloudBase 跨域设置。"
+          : error.message;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function restoreAdminSession() {
+      setAuthUi();
+
+      if (!adminSession || !adminSession.token) {
+        clearAdminData();
+        return;
+      }
+
+      try {
+        const data = await request("/api/photo-studio/admin/auth/me");
+        if (data && data.user) {
+          storeAdminSession({
+            ...adminSession,
+            user: data.user
+          });
+        }
+        loadAllAdminData();
+      } catch (error) {
+        clearAdminSession();
+        clearAdminData();
+        $("#authStatus").textContent = "登录已失效，请重新登录。";
+      }
+    }
+
+    function logoutAdmin() {
+      if (adminSession && adminSession.token) {
+        request("/api/photo-studio/admin/auth/logout", {
+          method: "POST",
+          body: JSON.stringify({})
+        }).catch(() => {});
+      }
+      clearAdminSession();
+      clearAdminData();
+      showToast("已退出登录");
+    }
+
+    $("#authForm").addEventListener("submit", (event) => {
+      loginAdmin(event);
     });
+    $("#logoutButton").addEventListener("click", logoutAdmin);
     $("#refreshCustomersButton").addEventListener("click", loadCustomers);
     $("#refreshButton").addEventListener("click", loadLeads);
     statusFilter.addEventListener("change", loadLeads);
@@ -1574,12 +1741,7 @@
         closeFaqModal();
       }
     });
-    if (apiToken) {
-      loadCustomers();
-      loadLeads();
-      loadKnowledge();
-      loadAnalytics();
-    }
+    restoreAdminSession();
   </script>
 </body>
 </html>

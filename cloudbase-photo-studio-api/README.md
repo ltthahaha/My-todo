@@ -14,6 +14,9 @@ GET  /api/photo-studio/admin/leads
 PATCH /api/photo-studio/admin/leads/:leadId
 GET  /api/photo-studio/admin/customers
 GET  /api/photo-studio/admin/customers/:customerKey
+POST /api/photo-studio/admin/auth/login
+GET  /api/photo-studio/admin/auth/me
+POST /api/photo-studio/admin/auth/logout
 GET  /api/photo-studio/admin/stats
 GET  /api/photo-studio/admin/unanswered
 PATCH /api/photo-studio/admin/unanswered/:questionId
@@ -70,11 +73,14 @@ CLOUDBASE_CHAT_COLLECTION=chat_messages
 CLOUDBASE_CHAT_SESSION_COLLECTION=chat_sessions
 CLOUDBASE_UNANSWERED_COLLECTION=unanswered_questions
 CLOUDBASE_DOUYIN_USER_COLLECTION=douyin_users
+CLOUDBASE_ADMIN_USER_COLLECTION=admin_users
 DOUYIN_APP_ID=tt428a3437dcf0288901
 DOUYIN_APP_SECRET=抖音小程序 AppSecret
 DOUYIN_AUTH_TOKEN_SECRET=用于签发小程序用户 token 的随机密钥
 FEISHU_BOT_WEBHOOK=你的飞书群机器人 Webhook
 ADMIN_API_TOKEN=线索管理后台访问令牌
+ADMIN_SESSION_SECRET=用于签发后台登录 session 的随机密钥
+ADMIN_SESSION_TTL_SECONDS=604800
 AI_ENABLED=false
 AI_PROVIDER=volcengine
 ARK_API_KEY=火山方舟服务端 API Key
@@ -106,6 +112,42 @@ douyin_users
 
 `DOUYIN_AUTH_TOKEN_SECRET` 建议填写一段 32 位以上随机字符串。如果不配置，会回退使用 `ADMIN_API_TOKEN`，但正式环境建议单独配置。
 
+### 后台账号登录
+
+CloudBase 需要额外创建集合：
+
+```text
+admin_users
+```
+
+第一版先手动在 `admin_users` 集合插入门店账号：
+
+```json
+{
+  "userId": "admin_demo_owner",
+  "studioId": "demo-studio",
+  "email": "owner@example.com",
+  "name": "店主",
+  "role": "owner",
+  "status": "active",
+  "passwordHash": "pbkdf2$120000$盐值$哈希值"
+}
+```
+
+在 PowerShell 中生成 `passwordHash`：
+
+```powershell
+node -e 'const crypto=require("crypto"); const password=process.argv[1]; const salt=crypto.randomBytes(16).toString("hex"); const hash=crypto.pbkdf2Sync(password,salt,120000,32,"sha256").toString("hex"); console.log("pbkdf2$120000$"+salt+"$"+hash)' "你的登录密码"
+```
+
+后台登录成功后，前端会保存短期 session token 到当前浏览器标签页的 `sessionStorage`，后续请求使用：
+
+```text
+Authorization: Bearer 后台登录 token
+```
+
+`ADMIN_API_TOKEN` 仍作为应急后门保留，但正式运营应使用账号登录。
+
 部署后先访问 `/health`，确认：
 
 ```json
@@ -126,7 +168,7 @@ douyin_users
 
 ```text
 允许来源：https://你的静态托管域名
-允许请求头：X-Admin-Token, Content-Type
+允许请求头：Authorization, X-Admin-Token, Content-Type
 允许方法：GET, POST, PATCH, OPTIONS
 ```
 

@@ -7,7 +7,22 @@
 在 CloudBase HTTP 云函数环境变量中添加：
 
 ```text
-ADMIN_API_TOKEN=一段长度足够的随机字符串
+ADMIN_SESSION_SECRET=一段长度足够的随机字符串
+ADMIN_API_TOKEN=一段长度足够的随机字符串（应急后门，可选但建议测试期保留）
+```
+
+同时在 CloudBase 数据库创建 `admin_users` 集合，并手动插入门店后台账号。账号记录需要包含：
+
+```json
+{
+  "userId": "admin_demo_owner",
+  "studioId": "demo-studio",
+  "email": "owner@example.com",
+  "name": "店主",
+  "role": "owner",
+  "status": "active",
+  "passwordHash": "pbkdf2$120000$盐值$哈希值"
+}
 ```
 
 同时确认前端页面中的以下配置与实际项目一致：
@@ -20,13 +35,13 @@ const STUDIO_ID = "demo-studio";
 ## 使用方式
 
 1. 将 `index.html` 部署到静态网站托管、Vercel 或其他 HTTPS 静态托管服务。
-2. 打开页面，输入 `ADMIN_API_TOKEN`。
+2. 打开页面，输入门店账号邮箱和密码登录。
 3. 在“客户工作台”查看不同用户的聊天记录、预约资料和跟进状态。
 4. 在线索列表或客户详情中修改状态、内部备注后点击“保存”。
 
-管理令牌只保存在当前浏览器标签页的 `sessionStorage` 中，不会写入项目文件。
+登录 session 只保存在当前浏览器标签页的 `sessionStorage` 中，不会写入项目文件。
 
-如果 PowerShell 请求成功但浏览器提示无法访问接口，请先执行强制刷新（`Ctrl + F5`），再打开浏览器开发者工具查看 Network 中的接口请求。后台的 GET 请求不发送多余的 JSON 请求头，以减少跨域预检问题。
+如果 PowerShell 请求成功但浏览器提示无法访问接口，请先执行强制刷新（`Ctrl + F5`），再打开浏览器开发者工具查看 Network 中的接口请求。CloudBase HTTP 网关跨域需要允许请求头 `Authorization, Content-Type, X-Admin-Token`。
 
 ## 接口依赖
 
