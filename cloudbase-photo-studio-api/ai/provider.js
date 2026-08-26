@@ -40,15 +40,22 @@ function getAvailability() {
 }
 
 function extractText(data) {
-  const content = data &&
-    data.choices &&
-    data.choices[0] &&
-    data.choices[0].message &&
-    data.choices[0].message.content;
+  const choice = data && Array.isArray(data.choices) ? data.choices[0] : null;
+  const message = choice && choice.message ? choice.message : {};
+  const content = message.content || (choice && choice.text) || data.output_text;
+
+  if (content && typeof content === "object" && !Array.isArray(content)) {
+    return asString(content.text || content.value || content.content);
+  }
 
   if (Array.isArray(content)) {
     return content
-      .map((part) => typeof part === "string" ? part : asString(part && part.text))
+      .map((part) => {
+        if (typeof part === "string") {
+          return part;
+        }
+        return asString(part && (part.text || part.value || part.content));
+      })
       .filter(Boolean)
       .join("");
   }

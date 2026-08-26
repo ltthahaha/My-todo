@@ -21,24 +21,10 @@ function getStoredSessionId(serviceKey) {
   const key = `${sessionStoragePrefix}${serviceKey}`
 
   try {
-    const result = tt.getStorageSync({ key })
-    if (typeof result === "string") {
-      return result
-    }
-    if (result && typeof result.data === "string") {
-      return result.data
-    }
+    const result = tt.getStorageSync(key)
+    return typeof result === "string" ? result : ""
   } catch (error) {
     console.warn("read chat session failed", error)
-  }
-
-  try {
-    const result = tt.getStorageSync(key)
-    return typeof result === "string"
-      ? result
-      : (result && typeof result.data === "string" ? result.data : "")
-  } catch (error) {
-    console.warn("read chat session fallback failed", error)
     return ""
   }
 }
@@ -55,19 +41,9 @@ function storeSessionId(serviceKey, sessionId) {
   const key = `${sessionStoragePrefix}${serviceKey}`
 
   try {
-    tt.setStorageSync({
-      key,
-      data: sessionId
-    })
-    return
-  } catch (error) {
-    console.warn("store chat session failed", error)
-  }
-
-  try {
     tt.setStorageSync(key, sessionId)
   } catch (error) {
-    console.warn("store chat session fallback failed", error)
+    console.warn("store chat session failed", error)
   }
 }
 
