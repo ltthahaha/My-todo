@@ -2218,7 +2218,8 @@ function touchCustomer(customer, record, type) {
       : {};
   const createdAt = toTimestamp(record.createdAt);
   const updatedAt = toTimestamp(record.updatedAt);
-  const activeAt = Math.max(createdAt, updatedAt);
+  const profileUpdatedAt = toTimestamp(record.profileUpdatedAt);
+  const activeAt = Math.max(createdAt, updatedAt, profileUpdatedAt);
 
   if (sessionId) {
     customer.sessionIds.add(sessionId);
@@ -2277,16 +2278,29 @@ function touchCustomer(customer, record, type) {
     customer.lastAnswerSource = asString(record.lastAnswerSource) || customer.lastAnswerSource;
   }
 
+  if (type === "user") {
+    customer.douyinNickName = customer.douyinNickName ||
+      asString(record.douyinNickName || record.nickName || state.douyinNickName);
+    customer.douyinAvatarUrl = customer.douyinAvatarUrl ||
+      asString(record.douyinAvatarUrl || record.avatarUrl || state.douyinAvatarUrl);
+    customer.profileUpdatedAt = customer.profileUpdatedAt ||
+      record.profileUpdatedAt ||
+      record.updatedAt ||
+      state.profileUpdatedAt ||
+      null;
+  }
+
   customer.lastActiveAt = Math.max(customer.lastActiveAt, activeAt);
   customer.createdAt = customer.createdAt
     ? Math.min(customer.createdAt, createdAt || customer.createdAt)
     : createdAt;
 }
 
-function buildCustomerList({ sessions, messages, leads }) {
+function buildCustomerList({ sessions, messages, leads, users }) {
   const customers = new Map();
 
   [
+    ...(Array.isArray(users) ? users : []).map((record) => ({ record, type: "user" })),
     ...leads.map((record) => ({ record, type: "lead" })),
     ...sessions.map((record) => ({ record, type: "session" })),
     ...messages.map((record) => ({ record, type: "chat" }))
@@ -2550,7 +2564,8 @@ app.get("/api/photo-studio/admin/customers", requireAdmin, async (req, res) => {
     const customers = enrichCustomersWithDouyinUsers(buildCustomerList({
       sessions: Array.isArray(sessionResult.data) ? sessionResult.data : [],
       messages: Array.isArray(messageResult.data) ? messageResult.data : [],
-      leads: Array.isArray(leadResult.data) ? leadResult.data : []
+      leads: Array.isArray(leadResult.data) ? leadResult.data : [],
+      users: douyinUsers
     }), douyinUsers).slice(0, limit);
     const customerStates = await getCustomerStates(studioId);
     const stateByCustomer = new Map(
@@ -2617,22 +2632,24 @@ app.get("/api/photo-studio/admin/customers/:customerKey", requireAdmin, async (r
     const sessions = Array.isArray(sessionResult.data) ? sessionResult.data : [];
     const messages = Array.isArray(messageResult.data) ? messageResult.data : [];
     const leads = Array.isArray(leadResult.data) ? leadResult.data : [];
-    const customerSummary = buildCustomerList({ sessions, messages, leads })[0] || {
+    const douyinUser = customerKey.startsWith("douyin_")
+      ? await getDouyinUser(studioId, customerKey)
+      : null;
+    const customerSummary = buildCustomerList({
+      sessions,
+      messages,
+      leads,
+      users: douyinUser ? [douyinUser] : []
+    })[0] || {
       key: customerKey,
+      userId: customerKey.startsWith("douyin_") ? customerKey : "",
       sessionIds: [],
       leadCount: 0,
       chatCount: 0,
       sessionCount: 0
     };
-    const douyinUser = customerSummary.userId
-      ? await getDouyinUser(studioId, customerSummary.userId)
-      : null;
-    const [enrichedCustomer] = enrichCustomersWithDouyinUsers(
-      [customerSummary],
-      douyinUser ? [douyinUser] : []
-    );
     const state = await getCustomerState(studioId, customerKey);
-    const customer = decorateCustomer(enrichedCustomer, state);
+    const customer = decorateCustomer(customerSummary, state);
 
     res.json({
       ok: true,
