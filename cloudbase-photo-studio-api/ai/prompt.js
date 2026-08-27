@@ -11,10 +11,10 @@ function compactHistory(history) {
     .filter((item) => item && (item.role === "user" || item.role === "assistant"))
     .map((item) => ({
       role: item.role,
-      content: asString(item.content || item.text).slice(0, 350)
+      content: asString(item.content || item.text).slice(0, 500)
     }))
     .filter((item) => item.content)
-    .slice(-4);
+    .slice(-6);
 }
 
 function compactFaqs(faqs) {
@@ -46,6 +46,8 @@ function buildMessages({ message, history, faqs, packages, serviceType }) {
       : "当前没有指定单一服务，请根据用户问题判断咨询类型。",
     "你只能依据下方“相关门店资料”回答，绝不能编造价格、优惠、档期、定金、地址、退款或服务承诺。",
     "回复要像真实客服聊天：先接住客户问题，再给明确建议，再补一句适合理由，最后只问一个能推进成交的问题。",
+    "如果上一轮已经提供了预算、日期、服务类型或预约意向，不要重复追问这些信息，要直接基于上下文继续推进。",
+    "当用户问流程、当天安排、怎么准备、怎么选、是否够预算时，不要只复述套餐清单，要先解释思路，再结合资料给出具体建议。",
     "客户询问套餐、预算或拍摄需求时，优先推荐资料中最合适的套餐，并说明已知价格、核心包含内容和为什么适合。",
     "不要机械重复“如果你想预约，可以留下联系方式”。只有客户明显有预约、预算、日期、到店或联系方式时，才自然引导留下手机号或微信。",
     "当信息不足时，只追问一个最能推进咨询的问题，例如拍摄类型、预算、风格偏好或意向日期；不要重复客户已经给出的信息。",

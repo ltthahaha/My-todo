@@ -931,13 +931,13 @@ function hasComplexConsultationIntent(message) {
 }
 
 function hasPlanningIntent(message) {
-  return /流程|方案|怎么拍|拍摄步骤|拍摄安排|注意事项|准备|预算|档期|日期|时间|周末|下个月|本月底|月底|\d{1,2}月\d{1,2}[日号]?/.test(
+  return /流程|方案|怎么拍|拍摄步骤|拍摄安排|当天怎么安排|拍摄当天|当天流程|注意事项|准备|预算|档期|日期|时间|周末|下个月|本月底|月底|\d{1,2}月\d{1,2}[日号]?/.test(
     asString(message)
   );
 }
 
 function hasProcessIntent(message) {
-  return /流程|方案|怎么拍|拍摄步骤|拍摄安排|注意事项|准备什么/.test(asString(message));
+  return /流程|方案|怎么拍|拍摄步骤|拍摄安排|当天怎么安排|拍摄当天|当天流程|注意事项|准备什么/.test(asString(message));
 }
 
 function getSalesQuestion(sessionState, serviceType) {
@@ -1255,6 +1255,7 @@ function buildProcessReply(sessionState, serviceType) {
 function buildContextFallbackReply(sessionState, serviceType) {
   const state = normalizeSessionState(sessionState);
   const service = serviceType || state.serviceType || "摄影服务";
+  const processReply = buildProcessReply(state, service);
 
   if (state.destination && state.preferredDate) {
     return `可以为您安排${service}。您计划去${state.destination}，时间是${state.preferredDate}${state.groupSize ? `，同行${state.groupSize}` : ""}。请问更偏好自然风景还是城市街拍？`;
@@ -1268,7 +1269,7 @@ function buildContextFallbackReply(sessionState, serviceType) {
     return `了解，您计划${state.preferredDate}拍${service}。请告诉我想去的城市或拍摄地点，我再帮您匹配方案。`;
   }
 
-  return `可以帮您了解${service}的拍摄方案。请告诉我意向城市、日期或预算，我会继续为您推荐。`;
+  return processReply;
 }
 
 function mergeExtractedLead(
@@ -3589,23 +3590,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     const shouldUseAi = Boolean(
       aiAvailability.enabled &&
       !greeting &&
-      !bookingIntent &&
-      (
-        complexConsultationIntent ||
-        planningIntent ||
-        processIntent ||
-        sessionState.salesStage === "comparing" ||
-        sessionState.salesStage === "high_intent" ||
-        sessionState.pendingField === "contact" ||
-        Boolean(sessionState.budget && sessionState.preferredDate && !usePackageReply) ||
-        baseMatchType === "none" ||
-        (
-          contact &&
-          hasBusinessIntent(userConversationText) &&
-          !usePackageReply &&
-          !usePackageListReply
-        )
-      )
+      !bookingIntent
     );
     const aiResult = shouldUseAi
       ? await generateReply({
