@@ -510,6 +510,42 @@
       background: #eef6ff;
       box-shadow: inset 3px 0 0 var(--brand);
     }
+    .customer-identity {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      min-width: 0;
+    }
+    .customer-avatar {
+      width: 36px;
+      height: 36px;
+      flex: 0 0 36px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: #e8f1ff;
+      color: var(--brand);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 750;
+      overflow: hidden;
+    }
+    .customer-avatar.large {
+      width: 52px;
+      height: 52px;
+      flex-basis: 52px;
+      font-size: 18px;
+    }
+    .customer-name-block { min-width: 0; flex: 1; }
+    .customer-douyin {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .customer-title-row,
     .customer-meta-row {
       display: flex;
@@ -518,6 +554,28 @@
       align-items: center;
     }
     .customer-title { font-weight: 700; overflow-wrap: anywhere; }
+    .customer-profile-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+    .customer-profile-main { min-width: 0; flex: 1; }
+    .customer-profile-name {
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 750;
+      overflow-wrap: anywhere;
+    }
+    .customer-profile-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
     .customer-preview {
       margin-top: 6px;
       color: var(--muted);
@@ -1124,11 +1182,34 @@
     function getCustomerName(customer) {
       if (!customer) return "未选择客户";
       return customer.name ||
+        customer.douyinNickName ||
         customer.contact ||
         customer.userId ||
         customer.anonymousId ||
         customer.key ||
         "匿名客户";
+    }
+
+    function getAvatarInitial(customer) {
+      const text = getCustomerName(customer);
+      return text && text !== "匿名客户" ? text.slice(0, 1) : "客";
+    }
+
+    function renderCustomerAvatar(customer, sizeClass = "") {
+      const className = `customer-avatar ${sizeClass}`.trim();
+      if (customer && customer.douyinAvatarUrl) {
+        return `<img class="${className}" src="${escapeHtml(customer.douyinAvatarUrl)}" alt="">`;
+      }
+
+      return `<span class="${className}">${escapeHtml(getAvatarInitial(customer))}</span>`;
+    }
+
+    function renderDouyinMeta(customer) {
+      if (!customer || !customer.douyinNickName) {
+        return "抖音资料未授权";
+      }
+
+      return `抖音：${customer.douyinNickName}`;
     }
 
     function getCustomerMeta(customer) {
@@ -1145,6 +1226,7 @@
     function getCustomerSearchText(customer) {
       return [
         getCustomerName(customer),
+        customer.douyinNickName,
         customer.contact,
         customer.serviceType,
         customer.destination,
@@ -1239,12 +1321,16 @@
 
       list.innerHTML = priorityCustomers.map((customer) => `
         <article class="overview-item">
-          <div class="overview-item-main">
-            <div class="overview-item-title">
-              <span>${escapeHtml(getCustomerName(customer))}</span>
-              ${renderCustomerBadges(customer)}
+          <div class="customer-identity">
+            ${renderCustomerAvatar(customer)}
+            <div class="overview-item-main">
+              <div class="overview-item-title">
+                <span>${escapeHtml(getCustomerName(customer))}</span>
+                ${renderCustomerBadges(customer)}
+              </div>
+              <div class="overview-item-meta">${escapeHtml(renderDouyinMeta(customer))}</div>
+              <div class="overview-item-meta">${escapeHtml(getCustomerMeta(customer))} · ${escapeHtml(formatDate(customer.lastActiveAt))}</div>
             </div>
-            <div class="overview-item-meta">${escapeHtml(getCustomerMeta(customer))} · ${escapeHtml(formatDate(customer.lastActiveAt))}</div>
           </div>
           <button type="button" data-open-customer="${escapeHtml(customer.key)}">处理</button>
         </article>
@@ -1311,9 +1397,15 @@
         const active = key === currentCustomerKey ? "active" : "";
         return `
           <button class="customer-item ${active}" type="button" data-customer-key="${escapeHtml(key)}">
-            <div class="customer-title-row">
-              <span class="customer-title">${escapeHtml(getCustomerName(customer))}</span>
-              <span class="status status-${status}">${statusLabels[status]}</span>
+            <div class="customer-identity">
+              ${renderCustomerAvatar(customer)}
+              <div class="customer-name-block">
+                <div class="customer-title-row">
+                  <span class="customer-title">${escapeHtml(getCustomerName(customer))}</span>
+                  <span class="status status-${status}">${statusLabels[status]}</span>
+                </div>
+                <div class="customer-douyin">${escapeHtml(renderDouyinMeta(customer))}</div>
+              </div>
             </div>
             <div class="customer-preview">${escapeHtml(customer.lastMessage || customer.lastReply || "暂无对话摘要")}</div>
             ${renderCustomerBadges(customer)}
@@ -1404,6 +1496,16 @@
         : "";
       detailNode.innerHTML = `
         <section class="detail-group">
+          <div class="customer-profile-card">
+            ${renderCustomerAvatar(customer, "large")}
+            <div class="customer-profile-main">
+              <div class="customer-profile-name">${escapeHtml(getCustomerName(customer))}</div>
+              <div class="customer-profile-meta">${escapeHtml(renderDouyinMeta(customer))}</div>
+              <div class="customer-profile-meta">${escapeHtml(customer.contact || "暂未留下联系方式")}</div>
+            </div>
+          </div>
+        </section>
+        <section class="detail-group">
           <div class="customer-state-actions">
             <div>${renderCustomerBadges(customer) || '<span class="lead-meta">暂无待处理标记</span>'}</div>
             <button class="mark-read-button" type="button">标记已读</button>
@@ -1425,6 +1527,7 @@
           </div>
         </section>
         <section class="detail-group">
+          <div class="detail-row"><span class="detail-label">抖音昵称</span><span class="detail-value">${escapeHtml(customer.douyinNickName || "未授权")}</span></div>
           <div class="detail-row"><span class="detail-label">用户ID</span><span class="detail-value">${escapeHtml(customer.userId || "未登录")}</span></div>
           <div class="detail-row"><span class="detail-label">匿名ID</span><span class="detail-value">${escapeHtml(customer.anonymousId || "-")}</span></div>
           <div class="detail-row"><span class="detail-label">会话数</span><span class="detail-value">${Number(customer.sessionCount || 0)} 个</span></div>
@@ -1620,7 +1723,8 @@
         return `
           <tr data-id="${escapeHtml(id)}">
             <td>
-              <div class="lead-name">${escapeHtml(lead.name || "未填写")}</div>
+              <div class="lead-name">${escapeHtml(lead.name || lead.douyinNickName || "未填写")}</div>
+              <div class="lead-meta">${escapeHtml(lead.douyinNickName ? `抖音：${lead.douyinNickName}` : "抖音资料未授权")}</div>
               <div class="lead-meta">${escapeHtml(lead.source || "-")}</div>
             </td>
             <td>${escapeHtml(lead.serviceType || "未填写")}<div class="lead-meta">${escapeHtml(lead.note || "")}</div></td>

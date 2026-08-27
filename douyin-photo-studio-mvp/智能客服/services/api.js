@@ -72,6 +72,10 @@ function storeAuth(authUser) {
   setStorage(`${AUTH_STORAGE_KEY}_${studioConfig.studioId}`, authUser)
 }
 
+function getAuthUser() {
+  return getStoredAuth()
+}
+
 function request(path, options = {}) {
   if (!API_BASE_URL) {
     return Promise.resolve(null)
@@ -183,7 +187,9 @@ function withAuth(payload, sender) {
       ? {
         userId: authUser.userId || "",
         userToken: authUser.userToken || "",
-        anonymousId: authUser.anonymousId || getAnonymousId()
+        anonymousId: authUser.anonymousId || getAnonymousId(),
+        douyinNickName: authUser.douyinNickName || "",
+        douyinAvatarUrl: authUser.douyinAvatarUrl || ""
       }
       : {
         anonymousId: getAnonymousId()
@@ -200,6 +206,35 @@ function withAuth(payload, sender) {
 
 module.exports = {
   loginWithDouyin,
+  getAuthUser,
+
+  saveProfile: function (profile) {
+    return withAuth({}, (data) => {
+      if (!data.userId || !data.userToken) {
+        return Promise.reject(new Error("Douyin login is required before saving profile"))
+      }
+
+      return request("/api/photo-studio/auth/profile", {
+        method: "POST",
+        data: {
+          ...data,
+          profile
+        }
+      }).then((response) => {
+        if (response && response.ok && response.user) {
+          const authUser = {
+            ...getStoredAuth(),
+            ...response.user,
+            userToken: data.userToken,
+            anonymousId: response.user.anonymousId || data.anonymousId
+          }
+          storeAuth(authUser)
+        }
+
+        return response
+      })
+    })
+  },
 
   chat: function (payload) {
     return withAuth(payload, (data) => request("/api/photo-studio/chat", {

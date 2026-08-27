@@ -62,6 +62,10 @@ Page({
     inputValue: "",
     quickQuestions: generalService.questions,
     isSending: false,
+    isProfileSaving: false,
+    profileSynced: false,
+    douyinNickName: "",
+    douyinAvatarUrl: "",
     scrollIntoView: "message-0"
   },
 
@@ -78,13 +82,80 @@ Page({
       serviceKey: current.key,
       service: current,
       messages: [{ role: "bot", text: welcomeText }],
-      quickQuestions: current.questions
+      quickQuestions: current.questions,
+      ...this.getStoredProfileState()
     }, () => {
       storeSessionId(current.key, sessionId)
       if (options.question) {
         const question = decodeURIComponent(options.question)
         this.setData({ inputValue: question }, () => {
           this.sendMessage()
+        })
+      }
+    })
+  },
+
+  getStoredProfileState: function () {
+    const authUser = api.getAuthUser ? api.getAuthUser() : null
+    const nickName = authUser && authUser.douyinNickName
+      ? authUser.douyinNickName
+      : ""
+    const avatarUrl = authUser && authUser.douyinAvatarUrl
+      ? authUser.douyinAvatarUrl
+      : ""
+
+    return {
+      profileSynced: Boolean(nickName || avatarUrl),
+      douyinNickName: nickName,
+      douyinAvatarUrl: avatarUrl
+    }
+  },
+
+  syncDouyinProfile: function () {
+    if (this.data.isProfileSaving) {
+      return
+    }
+
+    if (typeof tt === "undefined" || typeof tt.getUserProfile !== "function") {
+      tt.showToast({
+        title: "当前版本暂不支持授权",
+        icon: "none"
+      })
+      return
+    }
+
+    this.setData({ isProfileSaving: true })
+    tt.getUserProfile({
+      desc: "用于在客服后台识别咨询客户",
+      success: (result) => {
+        const profile = result && result.userInfo ? result.userInfo : result
+        api.saveProfile(profile).then((response) => {
+          const user = response && response.user ? response.user : {}
+          this.setData({
+            isProfileSaving: false,
+            profileSynced: true,
+            douyinNickName: user.douyinNickName || profile.nickName || "",
+            douyinAvatarUrl: user.douyinAvatarUrl || profile.avatarUrl || ""
+          })
+          tt.showToast({
+            title: "抖音资料已同步",
+            icon: "none"
+          })
+        }).catch((error) => {
+          console.warn("save douyin profile failed", error)
+          this.setData({ isProfileSaving: false })
+          tt.showToast({
+            title: "同步失败，请稍后重试",
+            icon: "none"
+          })
+        })
+      },
+      fail: (error) => {
+        console.warn("get douyin profile failed", error)
+        this.setData({ isProfileSaving: false })
+        tt.showToast({
+          title: "已取消授权",
+          icon: "none"
         })
       }
     })

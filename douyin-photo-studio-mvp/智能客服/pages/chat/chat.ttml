@@ -6,7 +6,14 @@
         <view class="chat-title">{{service.title}}</view>
         <view class="chat-subtitle">{{service.description}}</view>
       </view>
-      <view class="online-mark"><view class="status-dot"></view>在线</view>
+      <button tt:if="{{profileSynced}}" class="profile-button synced" disabled="{{isProfileSaving}}" bindtap="syncDouyinProfile">
+        <image tt:if="{{douyinAvatarUrl}}" class="profile-image" src="{{douyinAvatarUrl}}" mode="aspectFill"></image>
+        <text>{{douyinNickName || '已同步'}}</text>
+      </button>
+      <button tt:else class="profile-button" disabled="{{isProfileSaving}}" bindtap="syncDouyinProfile">
+        <text tt:if="{{isProfileSaving}}">同步中</text>
+        <text tt:else>同步抖音资料</text>
+      </button>
     </view>
 
     <scroll-view class="message-list" scroll-y="true" scroll-into-view="{{scrollIntoView}}">

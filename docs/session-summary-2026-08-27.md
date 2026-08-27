@@ -172,6 +172,8 @@ admin_users
 customer_states
 ```
 
+小程序客服页支持用户主动授权同步抖音资料。授权成功后，后端 `POST /api/photo-studio/auth/profile` 会把 `douyinNickName`、`douyinAvatarUrl`、`profileUpdatedAt` 写入 `douyin_users`，并在后续聊天、会话和线索记录中带上昵称头像快照。后台客户工作台和线索管理会优先展示真实姓名，其次展示抖音昵称；未授权用户继续按匿名客户处理。
+
 ### studios 示例记录
 
 ```json

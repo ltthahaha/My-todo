@@ -36,6 +36,7 @@
 
 .chat-header-copy {
   flex: 1;
+  min-width: 0;
   margin-left: 10px;
 }
 
@@ -43,12 +44,18 @@
   color: #26312d;
   font-size: 15px;
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-subtitle {
   margin-top: 3px;
   color: #89948f;
   font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .online-mark {
@@ -56,6 +63,46 @@
   align-items: center;
   color: #5e9180;
   font-size: 11px;
+}
+
+.profile-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  max-width: 116px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0 9px;
+  border: 1px solid #d7e4de;
+  border-radius: 999px;
+  background: #fff;
+  color: #668279;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.profile-button::after {
+  border: 0;
+}
+
+.profile-button.synced {
+  border-color: #c6ddd2;
+  background: #edf7f1;
+  color: #4f8c70;
+}
+
+.profile-button[disabled] {
+  opacity: 0.65;
+}
+
+.profile-image {
+  width: 20px;
+  height: 20px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: #e5f1eb;
 }
 
 .status-dot {

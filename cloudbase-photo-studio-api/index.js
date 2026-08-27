@@ -116,17 +116,47 @@ function verifyRequestUser(source, studioId) {
   const anonymousId = asString(body.anonymousId).slice(0, 120);
 
   if (userId && userToken && signUserToken(studioId, userId) === userToken) {
+    const profile = normalizeDouyinProfile(body);
     return {
       userId,
       anonymousId,
-      isAuthenticated: true
+      isAuthenticated: true,
+      ...profile
     };
   }
 
   return {
     userId: "",
     anonymousId,
-    isAuthenticated: false
+    isAuthenticated: false,
+    douyinNickName: "",
+    douyinAvatarUrl: ""
+  };
+}
+
+function normalizeDouyinProfile(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const userInfo = source.userInfo && typeof source.userInfo === "object"
+    ? source.userInfo
+    : source;
+  const nickName = asString(
+    userInfo.nickName ||
+    userInfo.nickname ||
+    userInfo.douyinNickName ||
+    source.nickName ||
+    source.douyinNickName
+  ).slice(0, 80);
+  const avatarUrl = asString(
+    userInfo.avatarUrl ||
+    userInfo.avatar ||
+    userInfo.douyinAvatarUrl ||
+    source.avatarUrl ||
+    source.douyinAvatarUrl
+  ).slice(0, 500);
+
+  return {
+    douyinNickName: nickName,
+    douyinAvatarUrl: avatarUrl
   };
 }
 
@@ -428,10 +458,13 @@ async function saveDouyinUser(user) {
     const previous = Array.isArray(existing.data) ? existing.data[0] : null;
     const now = new Date();
     const record = {
+      ...(previous || {}),
       ...user,
       updatedAt: now,
       createdAt: previous && previous.createdAt ? previous.createdAt : now
     };
+    delete record._id;
+    delete record.id;
 
     if (previous && previous._id) {
       await db.collection(douyinUserCollection).doc(previous._id).update(record);
@@ -454,6 +487,44 @@ async function saveDouyinUser(user) {
       stored: false,
       reason: error.message || "Douyin user write failed"
     };
+  }
+}
+
+async function getDouyinUser(studioId, userId) {
+  const db = getDatabase();
+
+  if (!db || !studioId || !userId) {
+    return null;
+  }
+
+  try {
+    const result = await db.collection(douyinUserCollection)
+      .where({ studioId, userId })
+      .limit(1)
+      .get();
+    return Array.isArray(result.data) ? result.data[0] || null : null;
+  } catch (error) {
+    console.error("CloudBase Douyin user read failed", error);
+    return null;
+  }
+}
+
+async function getDouyinUsers(studioId) {
+  const db = getDatabase();
+
+  if (!db || !studioId) {
+    return [];
+  }
+
+  try {
+    const result = await db.collection(douyinUserCollection)
+      .where({ studioId })
+      .limit(500)
+      .get();
+    return Array.isArray(result.data) ? result.data : [];
+  } catch (error) {
+    console.error("CloudBase Douyin users read failed", error);
+    return [];
   }
 }
 
@@ -1164,6 +1235,9 @@ function normalizeSessionState(value) {
     userId: asString(source.userId),
     anonymousId: asString(source.anonymousId),
     isAuthenticated: Boolean(source.isAuthenticated),
+    douyinNickName: asString(source.douyinNickName).slice(0, 80),
+    douyinAvatarUrl: asString(source.douyinAvatarUrl).slice(0, 500),
+    profileUpdatedAt: source.profileUpdatedAt || null,
     serviceKey: asString(source.serviceKey),
     serviceType: asString(source.serviceType),
     intent: asString(source.intent),
@@ -1346,6 +1420,7 @@ function buildLeadText(lead) {
   return [
     "新摄影店预约线索",
     `姓名：${lead.name || "未填写"}`,
+    `抖音昵称：${lead.douyinNickName || "未授权"}`,
     `联系方式：${lead.contact}`,
     `拍摄类型：${lead.serviceType || "未填写"}`,
     `意向日期：${lead.preferredDate || "未填写"}`,
@@ -1492,6 +1567,8 @@ async function captureAiLead({
       userId: user && user.userId ? user.userId : "",
       anonymousId: user && user.anonymousId ? user.anonymousId : "",
       isAuthenticated: Boolean(user && user.isAuthenticated),
+      douyinNickName: user && user.douyinNickName ? user.douyinNickName : "",
+      douyinAvatarUrl: user && user.douyinAvatarUrl ? user.douyinAvatarUrl : "",
       name: aiLead.name,
       contact: aiLead.contact,
       serviceType: aiLead.serviceType,
@@ -1591,6 +1668,8 @@ async function captureBookingLead({
       userId: user && user.userId ? user.userId : "",
       anonymousId: user && user.anonymousId ? user.anonymousId : "",
       isAuthenticated: Boolean(user && user.isAuthenticated),
+      douyinNickName: state.douyinNickName || (user && user.douyinNickName) || "",
+      douyinAvatarUrl: state.douyinAvatarUrl || (user && user.douyinAvatarUrl) || "",
       name: state.name,
       contact,
       serviceType: state.serviceType,
@@ -1769,6 +1848,8 @@ app.post("/api/photo-studio/auth/login", async (req, res) => {
       platform: "douyin-miniapp"
     };
     const storage = await saveDouyinUser(user);
+    const savedUser = await getDouyinUser(studioCheck.studioId, userId);
+    const savedProfile = normalizeDouyinProfile(savedUser || {});
 
     res.json({
       ok: true,
@@ -1781,7 +1862,8 @@ app.post("/api/photo-studio/auth/login", async (req, res) => {
         userId,
         anonymousId,
         platform: user.platform,
-        isAuthenticated: true
+        isAuthenticated: true,
+        ...savedProfile
       },
       userToken: signUserToken(studioCheck.studioId, userId),
       storage
@@ -1791,6 +1873,72 @@ app.post("/api/photo-studio/auth/login", async (req, res) => {
     res.status(502).json({
       ok: false,
       error: error.message || "Douyin login failed"
+    });
+  }
+});
+
+app.post("/api/photo-studio/auth/profile", async (req, res) => {
+  const requestedStudioId = asString(req.body.studioId) || defaultStudioId;
+  const requestedDouyinAppId = asString(req.body.douyinAppId || req.body.appId);
+  const profile = normalizeDouyinProfile(req.body.profile || req.body.userInfo || req.body);
+
+  if (!profile.douyinNickName && !profile.douyinAvatarUrl) {
+    res.status(400).json({
+      ok: false,
+      error: "Missing Douyin profile"
+    });
+    return;
+  }
+
+  try {
+    const studioCheck = await validateStudioRequest(requestedStudioId, requestedDouyinAppId);
+
+    if (!studioCheck.ok) {
+      res.status(studioCheck.status || 403).json({
+        ok: false,
+        error: studioCheck.error || "Studio validation failed"
+      });
+      return;
+    }
+
+    const requestUser = verifyRequestUser(req.body, studioCheck.studioId);
+
+    if (!requestUser.isAuthenticated || !requestUser.userId) {
+      res.status(401).json({
+        ok: false,
+        error: "Unauthorized user"
+      });
+      return;
+    }
+
+    const now = new Date();
+    const storage = await saveDouyinUser({
+      studioId: studioCheck.studioId,
+      douyinAppId: studioCheck.douyinAppId || "",
+      userId: requestUser.userId,
+      anonymousId: requestUser.anonymousId,
+      platform: "douyin-miniapp",
+      ...profile,
+      profileUpdatedAt: now
+    });
+
+    res.json({
+      ok: true,
+      user: {
+        userId: requestUser.userId,
+        anonymousId: requestUser.anonymousId,
+        platform: "douyin-miniapp",
+        isAuthenticated: true,
+        ...profile,
+        profileUpdatedAt: now
+      },
+      storage
+    });
+  } catch (error) {
+    console.error("Douyin profile save failed", error);
+    res.status(502).json({
+      ok: false,
+      error: error.message || "Douyin profile save failed"
     });
   }
 });
@@ -2027,6 +2175,9 @@ function createCustomerSummary(record) {
     anonymousId: asString(record && record.anonymousId),
     isAuthenticated: Boolean(record && record.isAuthenticated),
     sessionIds: new Set(),
+    douyinNickName: "",
+    douyinAvatarUrl: "",
+    profileUpdatedAt: null,
     name: "",
     contact: "",
     serviceType: "",
@@ -2076,6 +2227,14 @@ function touchCustomer(customer, record, type) {
   customer.userId = customer.userId || asString(record.userId);
   customer.anonymousId = customer.anonymousId || asString(record.anonymousId);
   customer.isAuthenticated = customer.isAuthenticated || Boolean(record.isAuthenticated);
+  customer.douyinNickName = customer.douyinNickName ||
+    asString(record.douyinNickName || state.douyinNickName);
+  customer.douyinAvatarUrl = customer.douyinAvatarUrl ||
+    asString(record.douyinAvatarUrl || state.douyinAvatarUrl);
+  customer.profileUpdatedAt = customer.profileUpdatedAt ||
+    record.profileUpdatedAt ||
+    state.profileUpdatedAt ||
+    null;
   customer.name = customer.name || asString(record.name);
   customer.contact = customer.contact || asString(record.contact || state.contact);
   customer.serviceType = customer.serviceType || asString(record.serviceType || state.serviceType);
@@ -2159,6 +2318,24 @@ function buildCustomerList({ sessions, messages, leads }) {
         : null
     }))
     .sort((a, b) => toTimestamp(b.lastActiveAt) - toTimestamp(a.lastActiveAt));
+}
+
+function enrichCustomersWithDouyinUsers(customers, douyinUsers) {
+  const userById = new Map(
+    (Array.isArray(douyinUsers) ? douyinUsers : [])
+      .filter((user) => asString(user && user.userId))
+      .map((user) => [asString(user.userId), user])
+  );
+
+  return customers.map((customer) => {
+    const user = userById.get(customer.userId) || {};
+    return {
+      ...customer,
+      douyinNickName: customer.douyinNickName || asString(user.douyinNickName).slice(0, 80),
+      douyinAvatarUrl: customer.douyinAvatarUrl || asString(user.douyinAvatarUrl).slice(0, 500),
+      profileUpdatedAt: customer.profileUpdatedAt || user.profileUpdatedAt || null
+    };
+  });
 }
 
 function buildCustomerFilter(studioId, customerKey) {
@@ -2369,11 +2546,12 @@ app.get("/api/photo-studio/admin/customers", requireAdmin, async (req, res) => {
         .limit(limit * 2)
         .get()
     ]);
-    const customers = buildCustomerList({
+    const douyinUsers = await getDouyinUsers(studioId);
+    const customers = enrichCustomersWithDouyinUsers(buildCustomerList({
       sessions: Array.isArray(sessionResult.data) ? sessionResult.data : [],
       messages: Array.isArray(messageResult.data) ? messageResult.data : [],
       leads: Array.isArray(leadResult.data) ? leadResult.data : []
-    }).slice(0, limit);
+    }), douyinUsers).slice(0, limit);
     const customerStates = await getCustomerStates(studioId);
     const stateByCustomer = new Map(
       customerStates.map((state) => [state.customerKey, state])
@@ -2446,8 +2624,15 @@ app.get("/api/photo-studio/admin/customers/:customerKey", requireAdmin, async (r
       chatCount: 0,
       sessionCount: 0
     };
+    const douyinUser = customerSummary.userId
+      ? await getDouyinUser(studioId, customerSummary.userId)
+      : null;
+    const [enrichedCustomer] = enrichCustomersWithDouyinUsers(
+      [customerSummary],
+      douyinUser ? [douyinUser] : []
+    );
     const state = await getCustomerState(studioId, customerKey);
-    const customer = decorateCustomer(customerSummary, state);
+    const customer = decorateCustomer(enrichedCustomer, state);
 
     res.json({
       ok: true,
@@ -3142,6 +3327,12 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         anonymousId: requestUser.anonymousId || (storedSession && storedSession.anonymousId),
         isAuthenticated: requestUser.isAuthenticated ||
           Boolean(storedSession && storedSession.isAuthenticated),
+        douyinNickName: requestUser.douyinNickName ||
+          (storedSession && storedSession.douyinNickName) ||
+          "",
+        douyinAvatarUrl: requestUser.douyinAvatarUrl ||
+          (storedSession && storedSession.douyinAvatarUrl) ||
+          "",
         serviceKey: serviceKey || (storedSession && storedSession.serviceKey),
         serviceType: serviceContext
       },
@@ -3358,6 +3549,9 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         userId: sessionState.userId || "",
         anonymousId: sessionState.anonymousId || "",
         isAuthenticated: Boolean(sessionState.isAuthenticated),
+        douyinNickName: sessionState.douyinNickName || "",
+        douyinAvatarUrl: sessionState.douyinAvatarUrl || "",
+        profileUpdatedAt: sessionState.profileUpdatedAt || null,
         userMessage: message,
         reply,
         matchedFaqId: matchedFaq ? matchedFaq.id : null,
@@ -3396,6 +3590,8 @@ app.post("/api/photo-studio/chat", async (req, res) => {
           userId: sessionState.userId,
           anonymousId: sessionState.anonymousId,
           isAuthenticated: sessionState.isAuthenticated,
+          douyinNickName: sessionState.douyinNickName,
+          douyinAvatarUrl: sessionState.douyinAvatarUrl,
           pendingField: sessionState.pendingField
         },
         sessionStored: sessionStorage.stored,
@@ -3526,6 +3722,8 @@ app.post("/api/photo-studio/leads", async (req, res) => {
     userId: "",
     anonymousId: "",
     isAuthenticated: false,
+    douyinNickName: "",
+    douyinAvatarUrl: "",
     name: asString(req.body.name),
     contact: asString(req.body.contact),
     serviceType: asString(req.body.serviceType),
@@ -3562,6 +3760,8 @@ app.post("/api/photo-studio/leads", async (req, res) => {
     lead.userId = requestUser.userId;
     lead.anonymousId = requestUser.anonymousId;
     lead.isAuthenticated = requestUser.isAuthenticated;
+    lead.douyinNickName = requestUser.douyinNickName || "";
+    lead.douyinAvatarUrl = requestUser.douyinAvatarUrl || "";
     const storage = await saveLead(lead);
     let notification;
 

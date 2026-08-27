@@ -10,6 +10,7 @@ GET  /api/photo-studio/knowledge
 POST /api/photo-studio/chat
 POST /api/photo-studio/leads
 POST /api/photo-studio/auth/login
+POST /api/photo-studio/auth/profile
 GET  /api/photo-studio/admin/leads
 PATCH /api/photo-studio/admin/leads/:leadId
 GET  /api/photo-studio/admin/customers
@@ -130,6 +131,14 @@ POST /api/photo-studio/auth/login
 ```
 
 服务端根据请求中的 `douyinAppId` 找到对应 AppSecret，换取抖音 `openid`，生成内部 `userId` 和签名 `userToken`。后续 `/chat` 和 `/leads` 请求会自动携带 `userId`、`userToken`、`anonymousId`，数据库中的 `chat_sessions`、`chat_messages`、`leads` 会写入这些字段。
+
+如果用户在小程序客服页点击“同步抖音资料”，前端会通过 `tt.getUserProfile()` 获取用户授权后的昵称和头像，再请求：
+
+```text
+POST /api/photo-studio/auth/profile
+```
+
+后端会校验 `userId + userToken`，并把 `douyinNickName`、`douyinAvatarUrl`、`profileUpdatedAt` 保存到 `douyin_users`。后续聊天和预约请求会把昵称头像带入 `chat_sessions`、`chat_messages`、`leads`，后台客户工作台会优先展示真实姓名，其次展示抖音昵称。用户拒绝授权时，不影响聊天和预约提交。
 
 CloudBase 需要额外创建集合：
 

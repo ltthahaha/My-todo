@@ -25,12 +25,15 @@ const studioConfig = {
 
 ```text
 POST /api/photo-studio/auth/login
+POST /api/photo-studio/auth/profile
 POST /api/photo-studio/chat
 POST /api/photo-studio/leads
 ```
 
 `/api/photo-studio/chat` 会读取当前 `studioId` 下的 FAQ、套餐、聊天上下文，并按配置调用 AI。
 `/api/photo-studio/leads` 会校验线索，保存到 CloudBase，并在配置 `FEISHU_BOT_WEBHOOK` 后推送到飞书群机器人。
+
+客服页的“同步抖音资料”按钮会在用户点击后调用 `tt.getUserProfile()`。授权成功后，小程序会把昵称和头像提交到 `/api/photo-studio/auth/profile`，后台客户工作台和线索管理会显示 `douyinNickName`、`douyinAvatarUrl`。用户取消授权时，咨询和预约流程继续按匿名客户处理。
 
 客服请求示例：
 
