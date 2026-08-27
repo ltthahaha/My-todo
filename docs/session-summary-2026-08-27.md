@@ -174,6 +174,8 @@ customer_states
 
 小程序客服页支持用户主动授权同步抖音资料。授权成功后，后端 `POST /api/photo-studio/auth/profile` 会把 `douyinNickName`、`douyinAvatarUrl`、`profileUpdatedAt` 写入 `douyin_users`，并在后续聊天、会话和线索记录中带上昵称头像快照。后台客户工作台和线索管理会优先展示真实姓名，其次展示抖音昵称；未授权用户继续按匿名客户处理。
 
+AI 客服回复策略已调整为“快答优先”：常见价格、套餐和 FAQ 命中时直接使用本地销售话术返回，复杂咨询、套餐对比、风格建议、个性化推荐或无明确命中时再调用 AI。聊天响应和日志会记录 `salesStage`，用于区分探索、比较、高意向和预约阶段。
+
 ### studios 示例记录
 
 ```json

@@ -925,6 +925,69 @@ function isGreetingMessage(message) {
   );
 }
 
+function hasComplexConsultationIntent(message) {
+  const text = asString(message);
+  return /对比|区别|怎么选|推荐|适合|风格|纠结|预算.*(?:怎么|如何|够不够)|有没有必要|值不值|拍出来|效果|建议|方案|帮我看|不确定|哪个好/.test(text);
+}
+
+function getSalesQuestion(sessionState, serviceType) {
+  const state = normalizeSessionState(sessionState);
+  const service = serviceType || state.serviceType || "拍摄";
+
+  if (!state.serviceType && !serviceType) {
+    return "你主要想了解婚纱照、旅拍、亲子照还是婚纱租赁呢？";
+  }
+
+  if (!state.budget) {
+    return `你这边大概预算在多少？我可以按预算帮你缩小到最合适的${service}方案。`;
+  }
+
+  if (!state.preferredDate) {
+    return "你大概想什么时候拍？我可以按时间帮你判断适合提前准备哪些内容。";
+  }
+
+  if (!state.contact) {
+    return "如果你想先锁定方案，可以留个手机号或微信，门店顾问帮你确认细节和档期。";
+  }
+
+  return "你更喜欢自然清透一点，还是仪式感强一点的风格？";
+}
+
+function appendSalesQuestion(answer, sessionState, serviceType) {
+  const text = asString(answer);
+  const question = getSalesQuestion(sessionState, serviceType);
+
+  if (!text) {
+    return question;
+  }
+
+  if (/[\?？]$/.test(text) || /手机号|微信|联系方式|预约|档期/.test(text)) {
+    return text;
+  }
+
+  return `${text.replace(/[。！？!?]+$/g, "")}。${question}`;
+}
+
+function getSalesStage({ bookingIntent, contact, complexConsultationIntent, baseMatchType, leadStage }) {
+  if (bookingIntent) {
+    return "booking";
+  }
+
+  if (contact || leadStage === "high_intent") {
+    return "high_intent";
+  }
+
+  if (complexConsultationIntent || baseMatchType === "package_list") {
+    return "comparing";
+  }
+
+  if (baseMatchType === "package" || baseMatchType === "faq") {
+    return "exploring";
+  }
+
+  return "greeting";
+}
+
 function extractContact(text) {
   const source = asString(text);
   const phone = source.match(/(?:\+?86[\s-]?)?(1[3-9]\d{9})(?!\d)/);
@@ -1131,6 +1194,8 @@ function mergeExtractedLead(
     ? source.leadStage
     : bookingIntent
       ? "high_intent"
+      : contact && hasBusinessIntent(contextText)
+        ? "high_intent"
       : "none";
   const intent = source.intent && source.intent !== "other"
     ? source.intent
@@ -1174,26 +1239,48 @@ function mergeExtractedLead(
   };
 }
 
-function buildPackageReply(item) {
+function buildPackageReply(item, sessionState, serviceType) {
   const items = item.items.length
-    ? `包含：${item.items.join("、")}。`
+    ? `核心包含${item.items.slice(0, 4).join("、")}。`
     : "";
   const description = item.description
     ? `${item.description.replace(/[。！？!?]+$/g, "")}。`
     : "";
+  const answer = `${item.name}目前是${item.price}，${items}${description}这档比较适合想先把品质和预算平衡好的客户。`;
 
-  return `${item.name}，价格${item.price}。${items}${description}如果你想预约，可以留下联系方式和意向日期，我们会尽快联系你。`;
+  return appendSalesQuestion(answer, sessionState, serviceType || item.category);
 }
 
-function buildPackageListReply(packages) {
-  const summary = packages
+function buildPackageListReply(packages, sessionState, serviceType) {
+  const availablePackages = packages
     .filter((item) => item.name && item.price)
-    .map((item) => `${item.name}（${item.price}）`)
-    .join("、");
+    .slice(0, 4);
 
-  return summary
-    ? `目前可咨询的套餐有：${summary}。告诉我你想了解的拍摄类型，我可以继续介绍套餐内容。`
-    : "目前还没有可展示的套餐，门店顾问可以为你提供详细方案。";
+  if (!availablePackages.length) {
+    return "目前还没有可展示的套餐，门店顾问可以根据你的拍摄类型和预算单独给方案。";
+  }
+
+  const summary = availablePackages
+    .map((item) => `${item.name} ${item.price}`)
+    .join("；");
+  const answer = `目前常咨询的是：${summary}。如果你已经有预算，我可以直接帮你判断哪一档更合适。`;
+
+  return appendSalesQuestion(answer, sessionState, serviceType);
+}
+
+function buildFaqReply(faq, sessionState, serviceType) {
+  const answer = asString(faq && faq.answer);
+
+  if (!answer) {
+    return buildContextFallbackReply(sessionState, serviceType);
+  }
+
+  const normalizedAnswer = answer.replace(/[。！？!?]+$/g, "");
+  const prefix = /可以|支持|提供|有|是|门店|我们/.test(normalizedAnswer.slice(0, 8))
+    ? ""
+    : "可以的，";
+
+  return appendSalesQuestion(`${prefix}${normalizedAnswer}。`, sessionState, serviceType || faq.category);
 }
 
 async function saveChatMessage(record) {
@@ -1241,6 +1328,7 @@ function normalizeSessionState(value) {
     serviceKey: asString(source.serviceKey),
     serviceType: asString(source.serviceType),
     intent: asString(source.intent),
+    salesStage: asString(source.salesStage),
     pendingField: asString(source.pendingField),
     destination: asString(source.destination),
     preferredDate: asString(source.preferredDate),
@@ -3359,6 +3447,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     const contact = sessionState.contact || extractContact(userConversationText);
     sessionState.contact = contact;
     const bookingIntent = isBookingIntent(message, sessionState, mergedHistory);
+    const complexConsultationIntent = hasComplexConsultationIntent(message);
     const matchedFaq = findFaq(message, faqs);
     const matchedPackage = findPackage(message, packages);
     const packageIntent = /套餐|价格|多少钱|预算|包含|内容|费用/.test(message);
@@ -3383,11 +3472,11 @@ app.post("/api/photo-studio/chat", async (req, res) => {
             ? "greeting"
             : "none";
     const fallbackReply = usePackageReply
-      ? buildPackageReply(matchedPackage)
+      ? buildPackageReply(matchedPackage, sessionState, serviceContext)
       : usePackageListReply
-        ? buildPackageListReply(packages)
+        ? buildPackageListReply(packages, sessionState, serviceContext)
         : matchedFaq
-          ? matchedFaq.answer
+          ? buildFaqReply(matchedFaq, sessionState, serviceContext)
           : greeting
             ? "你好，我是摄影店智能客服，可以帮你了解婚纱照、旅拍、亲子照、婚纱租赁和套餐价格。你想了解哪一项呢？"
             : buildContextFallbackReply(sessionState, serviceContext);
@@ -3402,7 +3491,17 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     const shouldUseAi = Boolean(
       aiAvailability.enabled &&
       !greeting &&
-      !bookingIntent
+      !bookingIntent &&
+      (
+        complexConsultationIntent ||
+        baseMatchType === "none" ||
+        (
+          contact &&
+          hasBusinessIntent(userConversationText) &&
+          !usePackageReply &&
+          !usePackageListReply
+        )
+      )
     );
     const aiResult = shouldUseAi
       ? await generateReply({
@@ -3535,6 +3634,13 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     sessionState.intent = bookingIntent
       ? "booking"
       : effectiveAiResult.intent || sessionState.intent || "";
+    sessionState.salesStage = getSalesStage({
+      bookingIntent,
+      contact,
+      complexConsultationIntent,
+      baseMatchType,
+      leadStage: effectiveAiResult.leadStage
+    });
     sessionState.pendingField = bookingIntent
       ? (leadCapture.stored ? "completed" : (sessionState.contact ? "submission" : "contact"))
       : "";
@@ -3590,6 +3696,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         aiRecovered: Boolean(aiUsed && aiResult.recovered),
         aiIntent: effectiveAiResult.intent,
         aiLeadStage: effectiveAiResult.leadStage,
+        salesStage: sessionState.salesStage,
         aiLead: effectiveAiResult.lead,
         aiFollowUpQuestion: aiUsed ? aiResult.followUpQuestion : null,
         aiLeadCaptureEligible: leadCapture.eligible,
@@ -3609,6 +3716,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
           isAuthenticated: sessionState.isAuthenticated,
           douyinNickName: sessionState.douyinNickName,
           douyinAvatarUrl: sessionState.douyinAvatarUrl,
+          salesStage: sessionState.salesStage,
           pendingField: sessionState.pendingField
         },
         sessionStored: sessionStorage.stored,
@@ -3687,6 +3795,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
           userId: sessionState.userId,
           anonymousId: sessionState.anonymousId,
           isAuthenticated: sessionState.isAuthenticated,
+          salesStage: sessionState.salesStage,
           pendingField: sessionState.pendingField
         }
       },
@@ -3701,6 +3810,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         lead: leadCapture.lead || null,
         notification
       },
+      salesStage: sessionState.salesStage,
       ai: {
         enabled: aiAvailability.enabled,
         configured: aiAvailability.configured,

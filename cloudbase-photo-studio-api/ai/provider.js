@@ -24,8 +24,8 @@ function getConfig() {
       7000
     ),
     maxTokens: Math.min(
-      Math.max(Number(process.env.AI_MAX_TOKENS) || 240, 120),
-      320
+      Math.max(Number(process.env.AI_MAX_TOKENS) || 200, 120),
+      260
     )
   };
 }
@@ -278,7 +278,7 @@ async function generateReply({ message, history, faqs, packages, serviceType }) 
           packages,
           serviceType
         }),
-        temperature: 0.35,
+        temperature: 0.45,
         max_tokens: config.maxTokens
       }),
       signal: controller.signal
