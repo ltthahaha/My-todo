@@ -41,17 +41,28 @@
     h1, h2, p { margin: 0; }
     h1 { font-size: 24px; line-height: 1.2; }
     .subtitle { color: var(--muted); margin-top: 6px; }
-    .auth {
-      display: grid;
-      grid-template-columns: minmax(150px, 1fr) minmax(130px, 1fr) auto auto;
-      gap: 8px;
-      min-width: min(560px, 100%);
+    .admin-session {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      min-width: min(440px, 100%);
     }
     .auth-status {
-      grid-column: 1 / -1;
       color: var(--muted);
       font-size: 12px;
       text-align: right;
+    }
+    .user-badge {
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f8fafc;
+      color: #3c4653;
+      font-weight: 650;
     }
     input, select, button {
       min-height: 38px;
@@ -441,7 +452,7 @@
     @media (max-width: 720px) {
       main { width: min(100% - 20px, 1180px); margin: 16px auto; }
       header, .toolbar { display: block; }
-      .auth { grid-template-columns: 1fr; margin-top: 16px; min-width: 0; }
+      .admin-session { justify-content: flex-start; margin-top: 16px; min-width: 0; flex-wrap: wrap; }
       .auth-status { text-align: left; }
       .filters { margin-bottom: 10px; }
       .knowledge-grid { grid-template-columns: 1fr; }
@@ -525,15 +536,12 @@
     <header>
       <div>
         <h1>摄影店线索管理</h1>
-        <p class="subtitle">登录门店账号，查看客户咨询、预约线索和运营数据。</p>
+        <p class="subtitle">查看客户咨询、预约线索和运营数据。</p>
       </div>
-      <form class="auth" id="authForm">
-        <input id="adminEmail" type="email" placeholder="邮箱" autocomplete="username" required>
-        <input id="adminPassword" type="password" placeholder="密码" autocomplete="current-password" required>
-        <button class="primary" id="loginButton" type="submit">登录</button>
-        <button id="logoutButton" class="hidden" type="button">退出</button>
-        <div class="auth-status" id="authStatus">请输入门店账号登录。</div>
-      </form>
+      <div class="admin-session">
+        <span class="user-badge" id="authStatus">正在检查登录状态...</span>
+        <button id="logoutButton" type="button">退出登录</button>
+      </div>
     </header>
 
     <nav class="tabs" aria-label="管理模块">
@@ -771,8 +779,6 @@
     let currentCustomerDetail = null;
 
     const $ = (selector) => document.querySelector(selector);
-    const emailInput = $("#adminEmail");
-    const passwordInput = $("#adminPassword");
     const statusFilter = $("#statusFilter");
     const unansweredStatusFilter = $("#unansweredStatusFilter");
 
@@ -799,13 +805,9 @@
 
     function setAuthUi() {
       const loggedIn = Boolean(adminSession && adminSession.token);
-      emailInput.classList.toggle("hidden", loggedIn);
-      passwordInput.classList.toggle("hidden", loggedIn);
-      $("#loginButton").classList.toggle("hidden", loggedIn);
-      $("#logoutButton").classList.toggle("hidden", !loggedIn);
       $("#authStatus").textContent = loggedIn
         ? `${adminSession.user.name || adminSession.user.email || "已登录"} · ${adminSession.user.role || "staff"} · ${adminSession.user.studioId}`
-        : "请输入门店账号登录。";
+        : "未登录";
     }
 
     function storeAdminSession(session) {
@@ -1627,51 +1629,11 @@
       loadAnalytics();
     }
 
-    async function loginAdmin(event) {
-      event.preventDefault();
-      const button = $("#loginButton");
-      button.disabled = true;
-      $("#authStatus").textContent = "正在登录...";
-
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/photo-studio/admin/auth/login`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            email: emailInput.value.trim(),
-            password: passwordInput.value
-          })
-        });
-        const data = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-          throw new Error(data.error || `登录失败：${response.status}`);
-        }
-
-        storeAdminSession({
-          token: data.token,
-          user: data.user,
-          expiresAt: Date.now() + Number(data.expiresIn || 0) * 1000
-        });
-        passwordInput.value = "";
-        showToast("登录成功");
-        loadAllAdminData();
-      } catch (error) {
-        $("#authStatus").textContent = error instanceof TypeError
-          ? "浏览器无法访问接口，请检查 CloudBase 跨域设置。"
-          : error.message;
-      } finally {
-        button.disabled = false;
-      }
-    }
-
     async function restoreAdminSession() {
       setAuthUi();
 
       if (!adminSession || !adminSession.token) {
-        clearAdminData();
+        window.location.replace("login.html");
         return;
       }
 
@@ -1686,8 +1648,7 @@
         loadAllAdminData();
       } catch (error) {
         clearAdminSession();
-        clearAdminData();
-        $("#authStatus").textContent = "登录已失效，请重新登录。";
+        window.location.replace("login.html");
       }
     }
 
@@ -1699,13 +1660,9 @@
         }).catch(() => {});
       }
       clearAdminSession();
-      clearAdminData();
-      showToast("已退出登录");
+      window.location.replace("login.html");
     }
 
-    $("#authForm").addEventListener("submit", (event) => {
-      loginAdmin(event);
-    });
     $("#logoutButton").addEventListener("click", logoutAdmin);
     $("#refreshCustomersButton").addEventListener("click", loadCustomers);
     $("#refreshButton").addEventListener("click", loadLeads);
