@@ -18,6 +18,7 @@ const chatSessionCollection = process.env.CLOUDBASE_CHAT_SESSION_COLLECTION || "
 const unansweredCollection = process.env.CLOUDBASE_UNANSWERED_COLLECTION || "unanswered_questions";
 const douyinUserCollection = process.env.CLOUDBASE_DOUYIN_USER_COLLECTION || "douyin_users";
 const adminUserCollection = process.env.CLOUDBASE_ADMIN_USER_COLLECTION || "admin_users";
+const customerStateCollection = process.env.CLOUDBASE_CUSTOMER_STATE_COLLECTION || "customer_states";
 const adminApiToken = asString(process.env.ADMIN_API_TOKEN);
 const adminSessionSecret = asString(
   process.env.ADMIN_SESSION_SECRET ||
@@ -1703,7 +1704,8 @@ app.get("/health", (req, res) => {
         chatSessions: chatSessionCollection,
         unansweredQuestions: unansweredCollection,
         douyinUsers: douyinUserCollection,
-        adminUsers: adminUserCollection
+        adminUsers: adminUserCollection,
+        customerStates: customerStateCollection
       }
     },
     adminAuth: {
@@ -2034,6 +2036,17 @@ function createCustomerSummary(record) {
     groupSize: "",
     status: "new",
     staffNote: "",
+    assignedTo: "",
+    followUpAt: "",
+    humanHandoff: false,
+    lastReadAt: null,
+    unread: false,
+    followUpOverdue: false,
+    needsAttention: false,
+    needsHumanCount: 0,
+    lastNeedsHumanAt: 0,
+    lastCustomerMessageAt: 0,
+    highIntent: false,
     lastMessage: "",
     lastReply: "",
     lastAnswerSource: "",
@@ -2085,6 +2098,17 @@ function touchCustomer(customer, record, type) {
     customer.lastMessage = asString(record.userMessage) || customer.lastMessage;
     customer.lastReply = asString(record.reply) || customer.lastReply;
     customer.lastAnswerSource = asString(record.answerSource) || customer.lastAnswerSource;
+    customer.lastCustomerMessageAt = Math.max(
+      customer.lastCustomerMessageAt,
+      asString(record.userMessage) ? createdAt : 0
+    );
+    customer.highIntent = customer.highIntent ||
+      asString(record.aiLeadStage) === "high_intent";
+
+    if (record.needHuman) {
+      customer.needsHumanCount += 1;
+      customer.lastNeedsHumanAt = Math.max(customer.lastNeedsHumanAt, activeAt);
+    }
   }
 
   if (type === "session") {
@@ -2126,7 +2150,13 @@ function buildCustomerList({ sessions, messages, leads }) {
       ...customer,
       sessionIds: Array.from(customer.sessionIds),
       lastActiveAt: customer.lastActiveAt ? new Date(customer.lastActiveAt) : null,
-      createdAt: customer.createdAt ? new Date(customer.createdAt) : null
+      createdAt: customer.createdAt ? new Date(customer.createdAt) : null,
+      lastNeedsHumanAt: customer.lastNeedsHumanAt
+        ? new Date(customer.lastNeedsHumanAt)
+        : null,
+      lastCustomerMessageAt: customer.lastCustomerMessageAt
+        ? new Date(customer.lastCustomerMessageAt)
+        : null
     }))
     .sort((a, b) => toTimestamp(b.lastActiveAt) - toTimestamp(a.lastActiveAt));
 }
@@ -2144,6 +2174,168 @@ function buildCustomerFilter(studioId, customerKey) {
   }
 
   return filter;
+}
+
+function normalizeCustomerState(value) {
+  const source = value && typeof value === "object" ? value : {};
+
+  return {
+    id: asString(source._id || source.id),
+    studioId: asString(source.studioId),
+    customerKey: asString(source.customerKey),
+    assignedTo: asString(source.assignedTo),
+    followUpAt: asString(source.followUpAt),
+    humanHandoff: Boolean(source.humanHandoff),
+    lastReadAt: source.lastReadAt || null,
+    createdAt: source.createdAt || null,
+    updatedAt: source.updatedAt || null
+  };
+}
+
+function decorateCustomer(customer, state) {
+  const normalizedState = normalizeCustomerState(state);
+  const lastReadAt = toTimestamp(normalizedState.lastReadAt);
+  const lastCustomerMessageAt = toTimestamp(customer.lastCustomerMessageAt);
+  const followUpTimestamp = toTimestamp(normalizedState.followUpAt);
+  const followUpOverdue = Boolean(
+    followUpTimestamp &&
+    followUpTimestamp <= Date.now()
+  );
+  const unread = Boolean(
+    lastCustomerMessageAt &&
+    (!lastReadAt || lastCustomerMessageAt > lastReadAt)
+  );
+  const hasNewLead = customer.leadCount > 0 && customer.status === "new";
+
+  return {
+    ...customer,
+    assignedTo: normalizedState.assignedTo,
+    followUpAt: normalizedState.followUpAt,
+    humanHandoff: normalizedState.humanHandoff,
+    lastReadAt: normalizedState.lastReadAt,
+    unread,
+    followUpOverdue,
+    needsAttention: Boolean(
+      unread ||
+      followUpOverdue ||
+      normalizedState.humanHandoff ||
+      customer.needsHumanCount > 0 ||
+      hasNewLead
+    ),
+    state: normalizedState
+  };
+}
+
+async function getCustomerStates(studioId) {
+  const db = getDatabase();
+
+  if (!db) {
+    return [];
+  }
+
+  try {
+    const result = await db.collection(customerStateCollection)
+      .where({ studioId })
+      .limit(500)
+      .get();
+
+    return Array.isArray(result.data)
+      ? result.data.map(normalizeCustomerState)
+      : [];
+  } catch (error) {
+    // The collection is optional during migration; customer data should still load.
+    console.error("CloudBase customer state read failed", error);
+    return [];
+  }
+}
+
+async function getCustomerState(studioId, customerKey) {
+  const db = getDatabase();
+
+  if (!db || !studioId || !customerKey) {
+    return null;
+  }
+
+  try {
+    const result = await db.collection(customerStateCollection)
+      .where({ studioId, customerKey })
+      .limit(1)
+      .get();
+    const row = Array.isArray(result.data) ? result.data[0] : null;
+
+    return row ? normalizeCustomerState(row) : null;
+  } catch (error) {
+    console.error("CloudBase customer state detail read failed", error);
+    return null;
+  }
+}
+
+function normalizeFollowUpAt(value) {
+  const text = asString(value);
+
+  if (!text) {
+    return "";
+  }
+
+  const timestamp = Date.parse(text);
+  return Number.isNaN(timestamp) ? null : new Date(timestamp).toISOString();
+}
+
+async function saveCustomerState(studioId, customerKey, patch) {
+  const db = getDatabase();
+
+  if (!db) {
+    return {
+      stored: false,
+      reason: "CloudBase database is not configured",
+      state: null
+    };
+  }
+
+  const existing = await getCustomerState(studioId, customerKey);
+  const now = new Date();
+  const record = {
+    studioId,
+    customerKey,
+    assignedTo: Object.prototype.hasOwnProperty.call(patch, "assignedTo")
+      ? asString(patch.assignedTo).slice(0, 120)
+      : (existing && existing.assignedTo) || "",
+    followUpAt: Object.prototype.hasOwnProperty.call(patch, "followUpAt")
+      ? normalizeFollowUpAt(patch.followUpAt)
+      : (existing && existing.followUpAt) || "",
+    humanHandoff: Object.prototype.hasOwnProperty.call(patch, "humanHandoff")
+      ? Boolean(patch.humanHandoff)
+      : Boolean(existing && existing.humanHandoff),
+    lastReadAt: patch.markRead
+      ? now
+      : (existing && existing.lastReadAt) || null,
+    createdAt: existing && existing.createdAt ? existing.createdAt : now,
+    updatedAt: now
+  };
+
+  if (record.followUpAt === null) {
+    throw new Error("Invalid follow-up time");
+  }
+
+  if (existing && existing.id) {
+    await db.collection(customerStateCollection).doc(existing.id).update(record);
+    return {
+      stored: true,
+      updated: true,
+      id: existing.id,
+      state: normalizeCustomerState({ ...record, _id: existing.id })
+    };
+  }
+
+  const result = await db.collection(customerStateCollection).add(record);
+  const id = result.id || result._id || "";
+
+  return {
+    stored: true,
+    updated: false,
+    id,
+    state: normalizeCustomerState({ ...record, _id: id })
+  };
 }
 
 app.get("/api/photo-studio/admin/customers", requireAdmin, async (req, res) => {
@@ -2182,11 +2374,18 @@ app.get("/api/photo-studio/admin/customers", requireAdmin, async (req, res) => {
       messages: Array.isArray(messageResult.data) ? messageResult.data : [],
       leads: Array.isArray(leadResult.data) ? leadResult.data : []
     }).slice(0, limit);
+    const customerStates = await getCustomerStates(studioId);
+    const stateByCustomer = new Map(
+      customerStates.map((state) => [state.customerKey, state])
+    );
+    const decoratedCustomers = customers.map((customer) =>
+      decorateCustomer(customer, stateByCustomer.get(customer.key))
+    );
 
     res.json({
       ok: true,
       studioId,
-      customers
+      customers: decoratedCustomers
     });
   } catch (error) {
     console.error("Admin customer list failed", error);
@@ -2240,18 +2439,21 @@ app.get("/api/photo-studio/admin/customers/:customerKey", requireAdmin, async (r
     const sessions = Array.isArray(sessionResult.data) ? sessionResult.data : [];
     const messages = Array.isArray(messageResult.data) ? messageResult.data : [];
     const leads = Array.isArray(leadResult.data) ? leadResult.data : [];
-    const customer = buildCustomerList({ sessions, messages, leads })[0] || {
+    const customerSummary = buildCustomerList({ sessions, messages, leads })[0] || {
       key: customerKey,
       sessionIds: [],
       leadCount: 0,
       chatCount: 0,
       sessionCount: 0
     };
+    const state = await getCustomerState(studioId, customerKey);
+    const customer = decorateCustomer(customerSummary, state);
 
     res.json({
       ok: true,
       studioId,
       customer,
+      state: customer.state,
       sessions,
       messages,
       leads
@@ -2261,6 +2463,83 @@ app.get("/api/photo-studio/admin/customers/:customerKey", requireAdmin, async (r
     res.status(500).json({
       ok: false,
       error: error.message || "Customer detail failed"
+    });
+  }
+});
+
+app.patch("/api/photo-studio/admin/customers/:customerKey/state", requireAdmin, async (req, res) => {
+  const studioId = getAdminStudioId(req);
+  const customerKey = asString(req.params.customerKey);
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const hasFollowUpAt = Object.prototype.hasOwnProperty.call(body, "followUpAt");
+  const followUpAt = hasFollowUpAt ? asString(body.followUpAt) : "";
+
+  if (!customerKey) {
+    res.status(400).json({
+      ok: false,
+      error: "Missing customer key"
+    });
+    return;
+  }
+
+  if (hasFollowUpAt && followUpAt && Number.isNaN(Date.parse(followUpAt))) {
+    res.status(400).json({
+      ok: false,
+      error: "Invalid follow-up time"
+    });
+    return;
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(body, "humanHandoff") &&
+    typeof body.humanHandoff !== "boolean"
+  ) {
+    res.status(400).json({
+      ok: false,
+      error: "Invalid human handoff value"
+    });
+    return;
+  }
+
+  try {
+    const update = {
+      markRead: Boolean(body.markRead)
+    };
+
+    if (Object.prototype.hasOwnProperty.call(body, "assignedTo")) {
+      update.assignedTo = body.assignedTo;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "followUpAt")) {
+      update.followUpAt = body.followUpAt;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "humanHandoff")) {
+      update.humanHandoff = body.humanHandoff;
+    }
+
+    const storage = await saveCustomerState(studioId, customerKey, update);
+
+    if (!storage.stored) {
+      res.status(503).json({
+        ok: false,
+        error: storage.reason || "Customer state is not configured"
+      });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      studioId,
+      customerKey,
+      state: storage.state,
+      storage
+    });
+  } catch (error) {
+    console.error("Admin customer state update failed", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Customer state update failed"
     });
   }
 });

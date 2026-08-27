@@ -14,6 +14,7 @@ GET  /api/photo-studio/admin/leads
 PATCH /api/photo-studio/admin/leads/:leadId
 GET  /api/photo-studio/admin/customers
 GET  /api/photo-studio/admin/customers/:customerKey
+PATCH /api/photo-studio/admin/customers/:customerKey/state
 POST /api/photo-studio/admin/auth/login
 GET  /api/photo-studio/admin/auth/me
 POST /api/photo-studio/admin/auth/logout
@@ -76,6 +77,7 @@ CLOUDBASE_CHAT_SESSION_COLLECTION=chat_sessions
 CLOUDBASE_UNANSWERED_COLLECTION=unanswered_questions
 CLOUDBASE_DOUYIN_USER_COLLECTION=douyin_users
 CLOUDBASE_ADMIN_USER_COLLECTION=admin_users
+CLOUDBASE_CUSTOMER_STATE_COLLECTION=customer_states
 DOUYIN_APP_ID=tt428a3437dcf0288901
 DOUYIN_APP_SECRET=抖音小程序 AppSecret
 DOUYIN_APP_SECRETS={"tt428a3437dcf0288901":"抖音小程序 AppSecret"}
@@ -134,6 +136,7 @@ CloudBase 需要额外创建集合：
 ```text
 douyin_users
 studios
+customer_states
 ```
 
 `DOUYIN_AUTH_TOKEN_SECRET` 建议填写一段 32 位以上随机字符串。如果不配置，会回退使用 `ADMIN_API_TOKEN`，但正式环境建议单独配置。

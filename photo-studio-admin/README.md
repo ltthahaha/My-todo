@@ -62,10 +62,11 @@ const STUDIO_ID = "demo-studio";
 ```text
 GET /api/photo-studio/admin/customers
 GET /api/photo-studio/admin/customers/:customerKey
+PATCH /api/photo-studio/admin/customers/:customerKey/state
 PATCH /api/photo-studio/admin/leads/:leadId
 ```
 
-如果客户工作台为空，先确认小程序端已经重新编译，并且聊天或线索记录中已经写入 `userId`、`anonymousId` 或 `sessionId`。
+`customer_states` 集合用于保存后台跟进状态，包括负责人、下次跟进时间、人工接管和已读时间。如果客户工作台为空，先确认小程序端已经重新编译，并且聊天或线索记录中已经写入 `userId`、`anonymousId` 或 `sessionId`。
 
 ## 安全边界
 

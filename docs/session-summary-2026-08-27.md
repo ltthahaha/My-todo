@@ -169,6 +169,7 @@ chat_sessions
 unanswered_questions
 douyin_users
 admin_users
+customer_states
 ```
 
 ### studios 示例记录
