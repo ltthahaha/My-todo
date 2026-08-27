@@ -930,6 +930,16 @@ function hasComplexConsultationIntent(message) {
   return /对比|区别|怎么选|推荐|适合|风格|纠结|预算.*(?:怎么|如何|够不够)|有没有必要|值不值|拍出来|效果|建议|方案|帮我看|不确定|哪个好/.test(text);
 }
 
+function hasPlanningIntent(message) {
+  return /流程|方案|怎么拍|拍摄步骤|拍摄安排|注意事项|准备|预算|档期|日期|时间|周末|下个月|本月底|月底|\d{1,2}月\d{1,2}[日号]?/.test(
+    asString(message)
+  );
+}
+
+function hasProcessIntent(message) {
+  return /流程|方案|怎么拍|拍摄步骤|拍摄安排|注意事项|准备什么/.test(asString(message));
+}
+
 function getSalesQuestion(sessionState, serviceType) {
   const state = normalizeSessionState(sessionState);
   const service = serviceType || state.serviceType || "拍摄";
@@ -1062,6 +1072,71 @@ function hasBusinessIntent(text) {
   );
 }
 
+function normalizeKnowledgeTag(value) {
+  return asString(value).toLowerCase().replace(/\s+/g, "");
+}
+
+const serviceTagGroups = [
+  ["wedding", ["婚纱照", "婚纱", "wedding", "prewedding"]],
+  ["travel", ["旅拍", "旅游照", "旅游写真", "travel"]],
+  ["family", ["亲子照", "亲子", "宝宝照", "家庭照", "family"]],
+  ["dress", ["婚纱租赁", "礼服", "租婚纱", "租赁", "dress"]]
+];
+
+function getServiceTagGroup(value) {
+  const normalized = normalizeKnowledgeTag(value);
+
+  if (!normalized) {
+    return "";
+  }
+
+  const matched = serviceTagGroups.find(([, aliases]) =>
+    aliases.some((alias) => normalized.includes(normalizeKnowledgeTag(alias)))
+  );
+
+  return matched ? matched[0] : "";
+}
+
+function serviceMatchesTag(serviceType, tag) {
+  const service = normalizeKnowledgeTag(serviceType);
+  const itemTag = normalizeKnowledgeTag(tag);
+
+  if (!service || !itemTag) {
+    return true;
+  }
+
+  const serviceGroup = getServiceTagGroup(service);
+  const itemGroup = getServiceTagGroup(itemTag);
+
+  if (serviceGroup && itemGroup) {
+    return serviceGroup === itemGroup;
+  }
+
+  if (!itemGroup) {
+    return true;
+  }
+
+  return service.includes(itemTag) || itemTag.includes(service);
+}
+
+function filterKnowledgeForService(items, serviceType) {
+  const list = Array.isArray(items) ? items : [];
+
+  if (!serviceType) {
+    return list;
+  }
+
+  return list.filter((item) =>
+    serviceMatchesTag(serviceType, item.category || item.serviceType || item.name)
+  );
+}
+
+function isLikelyDateExpression(value) {
+  return /^(今天|明天|后天|这周末|下周末|下周|下个月|本月底|月底|\d{1,2}月\d{1,2}[日号]?|\d{1,2}月|[一二三四五六七八九十]+月)/.test(
+    normalizeKnowledgeTag(value)
+  );
+}
+
 function extractLeadFields(text) {
   const source = asString(text);
   const serviceType = /婚纱照|婚纱/.test(source)
@@ -1102,12 +1177,17 @@ function extractConversationFacts(text, existingState, serviceType) {
   const inferredGroupSize = /两个人|二个人|和朋友一起|跟朋友一起|与朋友一起/.test(source)
     ? "2人"
     : "";
+  const destinationText = destinationMatch && !isLikelyDateExpression(destinationMatch[1])
+    ? destinationMatch[1].trim()
+    : "";
 
   return {
     ...previous,
     serviceType: previous.serviceType || extracted.serviceType || serviceType || "",
-    destination: destinationMatch ? destinationMatch[1].trim() : previous.destination,
-    preferredDate: dateMatch ? dateMatch[1] : (extracted.preferredDate || previous.preferredDate),
+    destination: destinationText || previous.destination,
+    preferredDate: dateMatch
+      ? dateMatch[1]
+      : (extracted.preferredDate || previous.preferredDate),
     groupSize: groupMatch
       ? `${groupMatch[1]}人`
       : (inferredGroupSize || previous.groupSize),
@@ -1141,8 +1221,8 @@ function isBookingIntent(text, sessionState, history) {
 function buildBookingReply(sessionState, bookingLead) {
   const state = normalizeSessionState(sessionState);
   const details = [
-    state.destination && `目的地是${state.destination}`,
-    state.preferredDate && `时间是${state.preferredDate}`,
+    state.destination && `拍摄地点/目的地是${state.destination}`,
+    state.preferredDate && `意向日期是${state.preferredDate}`,
     state.groupSize && `同行${state.groupSize}`
   ].filter(Boolean);
   const summary = details.length
@@ -1158,6 +1238,18 @@ function buildBookingReply(sessionState, bookingLead) {
   }
 
   return `${summary}我现在为您提交预约意向，请稍等。`;
+}
+
+function buildProcessReply(sessionState, serviceType) {
+  const state = normalizeSessionState(sessionState);
+  const service = serviceType || state.serviceType || "拍摄";
+  const knownContext = [
+    state.budget && `预算${state.budget}`,
+    state.preferredDate && `意向时间${state.preferredDate}`
+  ].filter(Boolean);
+  const contextText = knownContext.length ? `结合你刚提到的${knownContext.join("、")}，` : "";
+
+  return `${contextText}${service}一般先沟通风格、预算和档期，再确认套餐与拍摄方案；拍摄前会确定服装造型和场景，拍摄当天按流程完成拍摄，后续再选片精修。你更想了解拍摄当天怎么安排，还是前期需要准备什么？`;
 }
 
 function buildContextFallbackReply(sessionState, serviceType) {
@@ -3413,6 +3505,8 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     const serviceContext = requestedServiceType ||
       (storedSession && storedSession.serviceType) ||
       "";
+    const scopedFaqs = filterKnowledgeForService(faqs, serviceContext);
+    const scopedPackages = filterKnowledgeForService(packages, serviceContext);
     const mergedHistory = mergeConversationHistory(
       storedSession && storedSession.recentHistory,
       history
@@ -3448,8 +3542,10 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     sessionState.contact = contact;
     const bookingIntent = isBookingIntent(message, sessionState, mergedHistory);
     const complexConsultationIntent = hasComplexConsultationIntent(message);
-    const matchedFaq = findFaq(message, faqs);
-    const matchedPackage = findPackage(message, packages);
+    const planningIntent = hasPlanningIntent(message);
+    const processIntent = hasProcessIntent(message);
+    const matchedFaq = findFaq(message, scopedFaqs);
+    const matchedPackage = findPackage(message, scopedPackages);
     const packageIntent = /套餐|价格|多少钱|预算|包含|内容|费用/.test(message);
     const listPackageIntent = /有哪些|什么套餐|套餐列表|套餐介绍/.test(message);
     const specificPackageMention = matchedPackage && (
@@ -3460,7 +3556,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     const usePackageListReply = Boolean(
       !usePackageReply &&
       !matchedFaq &&
-      (listPackageIntent || (packageIntent && packages.length))
+      (listPackageIntent || (packageIntent && scopedPackages.length))
     );
     const baseMatchType = usePackageReply
       ? "package"
@@ -3474,9 +3570,11 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     const fallbackReply = usePackageReply
       ? buildPackageReply(matchedPackage, sessionState, serviceContext)
       : usePackageListReply
-        ? buildPackageListReply(packages, sessionState, serviceContext)
+        ? buildPackageListReply(scopedPackages, sessionState, serviceContext)
         : matchedFaq
           ? buildFaqReply(matchedFaq, sessionState, serviceContext)
+          : processIntent
+            ? buildProcessReply(sessionState, serviceContext)
           : greeting
             ? "你好，我是摄影店智能客服，可以帮你了解婚纱照、旅拍、亲子照、婚纱租赁和套餐价格。你想了解哪一项呢？"
             : buildContextFallbackReply(sessionState, serviceContext);
@@ -3484,8 +3582,8 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     const retrievedKnowledge = retrieveKnowledge({
       message,
       history: mergedHistory,
-      faqs,
-      packages,
+      faqs: scopedFaqs,
+      packages: scopedPackages,
       serviceType: serviceContext
     });
     const shouldUseAi = Boolean(
@@ -3494,6 +3592,12 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       !bookingIntent &&
       (
         complexConsultationIntent ||
+        planningIntent ||
+        processIntent ||
+        sessionState.salesStage === "comparing" ||
+        sessionState.salesStage === "high_intent" ||
+        sessionState.pendingField === "contact" ||
+        Boolean(sessionState.budget && sessionState.preferredDate && !usePackageReply) ||
         baseMatchType === "none" ||
         (
           contact &&
@@ -3573,6 +3677,8 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         hasLeadContact(aiLead)
       );
     const needHuman = baseMatchType === "none" &&
+      !planningIntent &&
+      !processIntent &&
       !aiUsed &&
       !bookingIntent &&
       !leadCaptureEligible;
@@ -3732,7 +3838,14 @@ app.post("/api/photo-studio/chat", async (req, res) => {
 
     let unanswered = null;
 
-    if (baseMatchType === "none" && !aiUsed && !bookingIntent && !leadCaptureEligible) {
+    if (
+      baseMatchType === "none" &&
+      !planningIntent &&
+      !processIntent &&
+      !aiUsed &&
+      !bookingIntent &&
+      !leadCaptureEligible
+    ) {
       const now = new Date();
       unanswered = await withTimeout(
         () => saveUnansweredQuestion({
