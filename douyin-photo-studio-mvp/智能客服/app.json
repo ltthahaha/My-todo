@@ -1,0 +1,14 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/service/service",
+    "pages/chat/chat",
+    "pages/lead/lead"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#f7f8fa",
+    "navigationBarTitleText": "智能客服",
+    "navigationBarTextStyle": "black"
+  }
+}

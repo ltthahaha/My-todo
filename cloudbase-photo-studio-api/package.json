@@ -1,0 +1,17 @@
+{
+  "name": "cloudbase-photo-studio-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CloudBase HTTP API for the photography studio AI customer service MVP",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@cloudbase/js-sdk": "^3.8.1",
+    "express": "^4.21.2"
+  }
+}

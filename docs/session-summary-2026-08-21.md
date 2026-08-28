@@ -186,6 +186,13 @@ I build small automation tools that save time and reduce manual work.
 
 `photo-studio-customer-service-demo.html`
 
+后续已将 Demo 中的知识库数据拆分为独立文件：
+
+- `data/faq.json`
+- `data/packages.json`
+
+页面现在会优先读取 `data/*.json`，如果直接双击 HTML 导致浏览器无法读取本地 JSON，则回退到页面内置备用数据，保证 Demo 仍可演示。部署到 Vercel、GitHub Pages 或本地服务器后，会正常从 JSON 文件加载知识库。
+
 文件特点：
 
 - 单文件 HTML / CSS / JavaScript
@@ -206,7 +213,81 @@ I build small automation tools that save time and reduce manual work.
 - 作为 Upwork / Fiverr 作品集
 - 后续接入真实 AI API 的前端基础
 
-## 十、摄影店项目后续路线
+知识库拆分改动已推送到新分支：
+
+`photo-studio-knowledge-base`
+
+对应提交：
+
+`794b311 Extract photo studio knowledge base data`
+
+Pull Request 链接：
+
+`https://github.com/ltthahaha/My-todo/pull/new/photo-studio-knowledge-base`
+
+## 十、飞书多维表格接入方案
+
+飞书多维表格适合作为摄影店项目的“知识库后台 + 线索 CRM”。
+
+推荐架构：
+
+```text
+摄影店网页客服
+↓
+Vercel API
+↓
+飞书多维表格
+```
+
+不要让前端页面直接访问飞书 API，因为 `App Secret` 不能暴露在浏览器中。
+
+建议在飞书中建立 5 张表：
+
+- `FAQ`
+- `套餐`
+- `线索`
+- `聊天记录`
+- `未命中问题`
+
+已生成一个可直接导入飞书的 Excel 模板：
+
+`photography_studio_feishu_import.xlsx`
+
+模板包含 6 个工作表：
+
+- `说明`
+- `FAQ`
+- `套餐`
+- `线索`
+- `聊天记录`
+- `未命中问题`
+
+其中 `FAQ` 和 `套餐` 已写入当前 Demo 示例数据，`线索`、`聊天记录`、`未命中问题` 是后续正式接入时的数据模板。
+
+后续正式接入飞书时，Vercel 需要配置：
+
+```text
+FEISHU_APP_ID=飞书自建应用 App ID
+FEISHU_APP_SECRET=飞书自建应用 App Secret
+FEISHU_APP_TOKEN=多维表格 app_token
+FEISHU_FAQ_TABLE_ID=FAQ 表 table_id
+FEISHU_PACKAGES_TABLE_ID=套餐表 table_id
+FEISHU_LEADS_TABLE_ID=线索表 table_id
+FEISHU_CHAT_LOGS_TABLE_ID=聊天记录表 table_id
+FEISHU_UNANSWERED_TABLE_ID=未命中问题表 table_id
+```
+
+代码层面建议新增：
+
+```text
+GET /api/photo-studio/knowledge
+POST /api/photo-studio/leads
+POST /api/photo-studio/chat-log
+```
+
+前端页面优先请求 `/api/photo-studio/knowledge`，失败时再回退到 `data/faq.json` 和 `data/packages.json`。
+
+## 十一、摄影店项目后续路线
 
 建议按以下顺序推进：
 
@@ -220,7 +301,7 @@ I build small automation tools that save time and reduce manual work.
 8. 增加聊天记录和未命中问题统计
 9. 为每家摄影店提供独立知识库
 
-## 十一、当前最建议的行动
+## 十二、当前最建议的行动
 
 当前最实际的下一步不是继续堆功能，而是：
 

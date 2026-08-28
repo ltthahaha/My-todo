@@ -1,0 +1,2386 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>摄影店线索管理</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f8;
+      --surface: #ffffff;
+      --text: #1f2933;
+      --muted: #6b7785;
+      --line: #e5e9ef;
+      --brand: #2f80ed;
+      --danger: #c0392b;
+      --shadow: 0 8px 24px rgba(31, 41, 51, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { width: min(1180px, calc(100% - 32px)); margin: 32px auto; }
+    header, .toolbar, .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 24px;
+      border-radius: 10px;
+    }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 24px; line-height: 1.2; }
+    .subtitle { color: var(--muted); margin-top: 6px; }
+    .admin-session {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      min-width: min(440px, 100%);
+    }
+    .auth-status {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+    .user-badge {
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f8fafc;
+      color: #3c4653;
+      font-weight: 650;
+    }
+    input, select, button {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+    }
+    input, select { padding: 0 11px; width: 100%; }
+    button {
+      padding: 0 14px;
+      cursor: pointer;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    button.primary { background: var(--brand); border-color: var(--brand); color: white; }
+    button:hover { filter: brightness(0.97); }
+    button:disabled { cursor: wait; opacity: 0.6; }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 8px;
+    }
+    .filters { display: flex; gap: 8px; align-items: center; }
+    .count { color: var(--muted); }
+    .overview-toolbar {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .overview-toolbar h2 { font-size: 20px; }
+    .overview-actions { display: flex; align-items: center; gap: 10px; }
+    .sync-status { color: var(--muted); font-size: 12px; }
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .overview-card {
+      min-width: 0;
+      padding: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-top: 3px solid transparent;
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .overview-card.brand { border-top-color: var(--brand); }
+    .overview-card.warning { border-top-color: #d59a00; }
+    .overview-card.danger { border-top-color: var(--danger); }
+    .overview-card.success { border-top-color: #1a9b68; }
+    .overview-card-label { color: var(--muted); font-size: 12px; }
+    .overview-card-value {
+      margin-top: 5px;
+      font-size: 28px;
+      font-weight: 750;
+      line-height: 1.2;
+    }
+    .overview-card-note { margin-top: 6px; color: var(--muted); font-size: 12px; }
+    .overview-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .overview-panel {
+      min-width: 0;
+      padding: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .overview-panel-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .overview-panel-header h2 { font-size: 18px; }
+    .overview-list { display: grid; gap: 8px; margin-top: 14px; }
+    .overview-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfd;
+    }
+    .overview-item-main { min-width: 0; }
+    .overview-item-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+    }
+    .overview-item-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .overview-item .customer-badges { margin-top: 6px; }
+    .overview-item button { flex: 0 0 auto; }
+    .overview-empty { padding: 26px 8px; text-align: center; color: var(--muted); }
+    .customer-filter-bar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 132px;
+      gap: 8px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+    .customer-filter-bar input,
+    .customer-filter-bar select { min-width: 0; }
+    .customer-badges {
+      display: inline-flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .attention-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 20px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .attention-badge.unread { background: #e8f1ff; color: #1967d2; }
+    .attention-badge.follow-up { background: #fff5db; color: #946200; }
+    .attention-badge.human { background: #fdeceb; color: var(--danger); }
+    .attention-badge.intent { background: #e8f7ef; color: #18794e; }
+    .customer-back-button { display: none; }
+    .customer-quick-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .quick-action {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font-weight: 650;
+      text-decoration: none;
+    }
+    .quick-action:hover { background: #f7faff; }
+    .customer-state-form {
+      display: grid;
+      gap: 9px;
+      margin-top: 12px;
+    }
+    .customer-state-form label {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .customer-state-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .human-handoff-active {
+      border-color: #e2a4a0;
+      background: #fff5f4;
+      color: var(--danger);
+    }
+    .table-wrap { margin-top: 16px; overflow-x: auto; border-radius: 8px; }
+    table { width: 100%; min-width: 880px; border-collapse: collapse; }
+    th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; font-weight: 700; background: #fafbfc; }
+    tr:last-child td { border-bottom: 0; }
+    .lead-name { font-weight: 700; }
+    .lead-meta { color: var(--muted); margin-top: 4px; }
+    .status {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #eef2f6;
+      color: #52606d;
+      font-size: 12px;
+    }
+    .status-new { background: #e8f1ff; color: #1967d2; }
+    .status-contacted { background: #fff5db; color: #946200; }
+    .status-booked { background: #e8f7ef; color: #18794e; }
+    .status-completed { background: #e9edf1; color: #52606d; }
+    .status-invalid { background: #fdeceb; color: var(--danger); }
+    .empty, .error { padding: 48px 16px; text-align: center; color: var(--muted); }
+    .error { color: var(--danger); }
+    .row-actions { display: flex; gap: 8px; align-items: center; }
+    .row-actions select { min-width: 110px; }
+    .note-input { min-width: 180px; }
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      background: #1f2933;
+      color: #fff;
+      box-shadow: var(--shadow);
+    }
+    .hidden { display: none; }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-top: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .tab-button {
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 6px 6px 0 0;
+      background: transparent;
+      color: var(--muted);
+    }
+    .tab-button.active {
+      border-bottom-color: var(--brand);
+      color: var(--brand);
+    }
+    .view { margin-top: 16px; }
+    .knowledge-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .knowledge-actions { display: flex; gap: 8px; }
+    .knowledge-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .knowledge-panel {
+      min-width: 0;
+      padding: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .knowledge-panel h2 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 18px;
+    }
+    .knowledge-list { display: grid; gap: 12px; margin-top: 14px; }
+    .knowledge-item {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfd;
+    }
+    .knowledge-item.disabled { opacity: 0.65; }
+    .knowledge-item-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .knowledge-item-title { font-weight: 700; }
+    .knowledge-item-meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .knowledge-form {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+    .knowledge-form label { color: var(--muted); font-size: 12px; font-weight: 700; }
+    .knowledge-form textarea {
+      display: block;
+      width: 100%;
+      min-height: 86px;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      resize: vertical;
+      font: inherit;
+    }
+    .knowledge-form input, .knowledge-form textarea { margin-top: 4px; }
+    .knowledge-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .knowledge-item .field-label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    .knowledge-item textarea { min-height: 74px; }
+    .knowledge-item .item-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .knowledge-empty { padding: 24px 8px; text-align: center; color: var(--muted); }
+    .analytics-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .analytics-toolbar h2 { font-size: 18px; }
+    .analytics-actions { display: flex; align-items: center; gap: 8px; }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .stat-card {
+      min-width: 0;
+      padding: 16px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .stat-label { color: var(--muted); font-size: 12px; }
+    .stat-value { margin-top: 5px; font-size: 26px; font-weight: 700; line-height: 1.2; }
+    .analytics-panel {
+      margin-top: 16px;
+      padding: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .analytics-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .analytics-panel-header h2 { font-size: 18px; }
+    .question-list { display: grid; gap: 12px; margin-top: 14px; }
+    .question-item {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfd;
+    }
+    .question-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .question-text { font-weight: 700; word-break: break-word; }
+    .question-meta { margin-top: 5px; color: var(--muted); font-size: 12px; }
+    .question-controls {
+      display: grid;
+      grid-template-columns: minmax(120px, 180px) minmax(180px, 1fr) auto auto;
+      gap: 8px;
+      align-items: center;
+      margin-top: 12px;
+    }
+    .question-controls textarea {
+      width: 100%;
+      min-height: 38px;
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      resize: vertical;
+      font: inherit;
+    }
+    .customer-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding: 14px 16px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .customer-workbench {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr) 320px;
+      gap: 16px;
+      min-height: 620px;
+    }
+    .customer-panel {
+      min-width: 0;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .customer-panel-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfd;
+    }
+    .customer-panel-header h2 { font-size: 18px; }
+    .customer-list {
+      max-height: 560px;
+      overflow: auto;
+    }
+    .customer-item {
+      width: 100%;
+      display: block;
+      min-height: 0;
+      padding: 14px 16px;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+      background: #fff;
+      color: var(--text);
+      text-align: left;
+      white-space: normal;
+    }
+    .customer-item:hover { background: #f7faff; filter: none; }
+    .customer-item.active {
+      background: #eef6ff;
+      box-shadow: inset 3px 0 0 var(--brand);
+    }
+    .customer-identity {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      min-width: 0;
+    }
+    .customer-avatar {
+      width: 36px;
+      height: 36px;
+      flex: 0 0 36px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: #e8f1ff;
+      color: var(--brand);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 750;
+      overflow: hidden;
+    }
+    .customer-avatar.large {
+      width: 52px;
+      height: 52px;
+      flex-basis: 52px;
+      font-size: 18px;
+    }
+    .customer-name-block { min-width: 0; flex: 1; }
+    .customer-douyin {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .customer-title-row,
+    .customer-meta-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+    }
+    .customer-title { font-weight: 700; overflow-wrap: anywhere; }
+    .customer-profile-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+    .customer-profile-main { min-width: 0; flex: 1; }
+    .customer-profile-name {
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 750;
+      overflow-wrap: anywhere;
+    }
+    .customer-profile-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+    .customer-preview {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .customer-meta-row {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .chat-timeline {
+      display: grid;
+      gap: 12px;
+      max-height: 560px;
+      overflow: auto;
+      padding: 16px;
+      background: #f7f9fb;
+    }
+    .chat-pair {
+      display: grid;
+      gap: 8px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .chat-pair:last-child { border-bottom: 0; }
+    .chat-bubble {
+      max-width: 82%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      overflow-wrap: anywhere;
+    }
+    .chat-bubble.user {
+      justify-self: end;
+      background: #dff2ec;
+    }
+    .chat-bubble.bot {
+      justify-self: start;
+      background: #fff;
+      border: 1px solid var(--line);
+    }
+    .chat-meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .customer-detail {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+    .detail-group {
+      display: grid;
+      gap: 8px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .detail-group:last-child { border-bottom: 0; padding-bottom: 0; }
+    .detail-row {
+      display: grid;
+      grid-template-columns: 82px minmax(0, 1fr);
+      gap: 10px;
+    }
+    .detail-label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .detail-value { overflow-wrap: anywhere; }
+    .lead-card {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+    .lead-card-actions {
+      display: grid;
+      gap: 8px;
+    }
+    .lead-card-actions textarea {
+      width: 100%;
+      min-height: 72px;
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      resize: vertical;
+      font: inherit;
+    }
+    @media (max-width: 720px) {
+      main { width: min(100% - 20px, 1180px); margin: 16px auto; }
+      header, .toolbar { display: block; }
+      .admin-session { justify-content: flex-start; margin-top: 16px; min-width: 0; flex-wrap: wrap; }
+      .auth-status { text-align: left; }
+      .filters { margin-bottom: 10px; }
+      .knowledge-grid { grid-template-columns: 1fr; }
+      .knowledge-toolbar { display: block; }
+      .knowledge-actions { margin-top: 10px; }
+      .analytics-toolbar, .analytics-panel-header { display: block; }
+      .analytics-actions { margin-top: 10px; }
+      .overview-toolbar, .overview-panel-header { display: block; }
+      .overview-actions { margin-top: 10px; flex-wrap: wrap; }
+      .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .overview-layout { grid-template-columns: 1fr; }
+      .overview-item { align-items: flex-start; }
+      .overview-item-meta { white-space: normal; }
+      .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .question-controls { grid-template-columns: 1fr; }
+      .customer-toolbar { display: block; }
+      .customer-toolbar .filters { margin-top: 10px; }
+      .customer-workbench { grid-template-columns: 1fr; }
+      .customer-filter-bar { grid-template-columns: 1fr; }
+      .customer-list, .chat-timeline { max-height: none; }
+      .chat-bubble { max-width: 92%; }
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(31, 41, 51, 0.42);
+      z-index: 10;
+    }
+    .modal-backdrop.hidden { display: none; }
+    .modal {
+      width: min(560px, 100%);
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+      padding: 20px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 20px 60px rgba(31, 41, 51, 0.2);
+    }
+    .modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .modal-header h2 { font-size: 18px; }
+    .modal-close {
+      min-width: 38px;
+      padding: 0;
+      font-size: 20px;
+      line-height: 1;
+    }
+    .modal-form {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .modal-form label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .modal-form input, .modal-form textarea { margin-top: 4px; }
+    .modal-form textarea {
+      display: block;
+      width: 100%;
+      min-height: 110px;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      resize: vertical;
+      font: inherit;
+    }
+    .modal-question {
+      padding: 10px 12px;
+      border-left: 3px solid var(--brand);
+      background: #f5f8fc;
+      color: var(--text);
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>摄影店线索管理</h1>
+        <p class="subtitle">查看客户咨询、预约线索和运营数据。</p>
+      </div>
+      <div class="admin-session">
+        <span class="user-badge" id="authStatus">正在检查登录状态...</span>
+        <button id="logoutButton" type="button">退出登录</button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="管理模块">
+      <button class="tab-button active" type="button" data-view="dashboardView">今日工作台</button>
+      <button class="tab-button" type="button" data-view="customersView">客户工作台</button>
+      <button class="tab-button" type="button" data-view="leadsView">线索管理</button>
+      <button class="tab-button" type="button" data-view="knowledgeView">知识库管理</button>
+      <button class="tab-button" type="button" data-view="analyticsView">运营分析</button>
+    </nav>
+
+    <section id="dashboardView" class="view">
+      <div class="overview-toolbar">
+        <div>
+          <h2>今日工作台</h2>
+          <p class="subtitle">优先处理新线索、未读咨询、待跟进客户和人工接管会话。</p>
+        </div>
+        <div class="overview-actions">
+          <span class="sync-status" id="dashboardSyncStatus">尚未连接</span>
+          <button id="refreshDashboardButton" type="button">刷新工作台</button>
+        </div>
+      </div>
+
+      <div class="overview-grid">
+        <article class="overview-card brand">
+          <div class="overview-card-label">今日活跃客户</div>
+          <div class="overview-card-value" data-dashboard-stat="todayActiveCustomers">-</div>
+          <div class="overview-card-note">今天有咨询或预约动作</div>
+        </article>
+        <article class="overview-card warning">
+          <div class="overview-card-label">待跟进客户</div>
+          <div class="overview-card-value" data-dashboard-stat="attentionCustomers">-</div>
+          <div class="overview-card-note">未读、逾期或新线索</div>
+        </article>
+        <article class="overview-card danger">
+          <div class="overview-card-label">需人工处理</div>
+          <div class="overview-card-value" data-dashboard-stat="humanCustomers">-</div>
+          <div class="overview-card-note">AI 未能稳定处理</div>
+        </article>
+        <article class="overview-card success">
+          <div class="overview-card-label">已预约线索</div>
+          <div class="overview-card-value" data-dashboard-stat="bookedLeads">-</div>
+          <div class="overview-card-note">当前门店累计</div>
+        </article>
+      </div>
+
+      <div class="overview-layout">
+        <section class="overview-panel">
+          <div class="overview-panel-header">
+            <div>
+              <h2>优先处理</h2>
+              <p class="subtitle">按最近活跃时间排序，优先显示需要动作的客户。</p>
+            </div>
+            <button type="button" data-open-view="customersView">查看全部客户</button>
+          </div>
+          <div class="overview-list" id="priorityCustomerList">
+            <div class="overview-empty">请输入门店账号登录。</div>
+          </div>
+        </section>
+
+        <section class="overview-panel">
+          <div class="overview-panel-header">
+            <div>
+              <h2>运营提醒</h2>
+              <p class="subtitle">每天开店后先看这里。</p>
+            </div>
+          </div>
+          <div class="overview-list" id="operationsChecklist">
+            <div class="overview-empty">暂无提醒。</div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="customersView" class="view hidden">
+      <div class="customer-toolbar">
+        <div>
+          <h2>客户咨询工作台</h2>
+          <p class="subtitle">按客户聚合聊天记录、预约意向和跟进状态。</p>
+        </div>
+        <div class="filters">
+          <button id="refreshCustomersButton" type="button">刷新客户</button>
+          <span class="count" id="customerCount">尚未连接</span>
+        </div>
+      </div>
+
+      <div class="customer-workbench">
+        <aside class="customer-panel">
+          <div class="customer-panel-header">
+            <h2>客户列表</h2>
+            <p class="subtitle">优先显示最近咨询客户。</p>
+          </div>
+          <div class="customer-filter-bar">
+            <input id="customerSearchInput" type="search" placeholder="搜索姓名、手机号、服务或备注">
+            <select id="customerAttentionFilter" aria-label="客户筛选">
+              <option value="all">全部客户</option>
+              <option value="attention">待处理</option>
+              <option value="unread">未读</option>
+              <option value="followUp">待跟进</option>
+              <option value="human">需人工</option>
+              <option value="highIntent">高意向</option>
+            </select>
+          </div>
+          <div id="customerList" class="customer-list">
+            <div class="empty">请输入门店账号登录。</div>
+          </div>
+        </aside>
+
+        <section class="customer-panel">
+          <div class="customer-panel-header">
+            <h2 id="customerChatTitle">聊天记录</h2>
+            <p class="subtitle" id="customerChatSubtitle">选择左侧客户查看完整对话。</p>
+          </div>
+          <div id="customerChatTimeline" class="chat-timeline">
+            <div class="empty">请选择一个客户。</div>
+          </div>
+        </section>
+
+        <aside class="customer-panel">
+          <div class="customer-panel-header">
+            <h2>预约与跟进</h2>
+            <p class="subtitle">查看客户资料并更新线索状态。</p>
+          </div>
+          <div id="customerDetail" class="customer-detail">
+            <div class="empty">请选择一个客户。</div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="leadsView" class="view hidden">
+      <div class="toolbar">
+        <div class="filters">
+          <label for="statusFilter">状态</label>
+          <select id="statusFilter">
+            <option value="all">全部</option>
+            <option value="new">新线索</option>
+            <option value="contacted">已联系</option>
+            <option value="booked">已预约</option>
+            <option value="completed">已完成</option>
+            <option value="invalid">无效</option>
+          </select>
+          <button id="refreshButton" type="button">刷新</button>
+        </div>
+        <div class="count" id="count">尚未连接</div>
+      </div>
+
+      <section class="table-wrap">
+        <div class="empty" id="emptyState">请输入门店账号登录。</div>
+        <div class="error hidden" id="errorState"></div>
+        <table class="hidden" id="leadTable">
+          <thead>
+            <tr>
+              <th>客户</th>
+              <th>拍摄需求</th>
+              <th>意向日期</th>
+              <th>预算 / 联系方式</th>
+              <th>状态与备注</th>
+              <th>创建时间</th>
+            </tr>
+          </thead>
+          <tbody id="leadBody"></tbody>
+        </table>
+      </section>
+    </section>
+
+    <section id="knowledgeView" class="view hidden">
+      <div class="knowledge-toolbar">
+        <div>
+          <h2>知识库管理</h2>
+          <p class="subtitle">维护客服 FAQ 和套餐信息，停用后不会被小程序客服使用。</p>
+        </div>
+        <div class="knowledge-actions">
+          <button id="addFaqButton" type="button">新增 FAQ</button>
+          <button id="addPackageButton" class="primary" type="button">新增套餐</button>
+          <button id="refreshKnowledgeButton" type="button">刷新</button>
+        </div>
+      </div>
+
+      <div class="knowledge-grid">
+        <article class="knowledge-panel">
+          <h2><span>FAQ</span><span class="count" id="faqCount">0 条</span></h2>
+          <form id="faqForm" class="knowledge-form hidden">
+            <label>分类<input id="faqCategory" required placeholder="例如：婚纱照"></label>
+            <label>关键词<input id="faqKeywords" required placeholder="用逗号分隔，例如：婚纱,婚照"></label>
+            <label>客服回复<textarea id="faqAnswer" required placeholder="输入客户看到的回复内容"></textarea></label>
+            <div class="knowledge-form-actions">
+              <button id="cancelFaqButton" type="button">取消</button>
+              <button class="primary" type="submit">创建 FAQ</button>
+            </div>
+          </form>
+          <div id="faqList" class="knowledge-list"></div>
+        </article>
+
+        <article class="knowledge-panel">
+          <h2><span>套餐</span><span class="count" id="packageCount">0 条</span></h2>
+          <form id="packageForm" class="knowledge-form hidden">
+            <label>套餐名称<input id="packageName" required placeholder="例如：轻奢婚纱照"></label>
+            <label>分类<input id="packageCategory" required placeholder="例如：婚纱照"></label>
+            <label>价格<input id="packagePrice" required placeholder="例如：¥3999 起"></label>
+            <label>包含内容<textarea id="packageItems" placeholder="每行一项"></textarea></label>
+            <label>套餐说明<textarea id="packageDescription" placeholder="输入套餐适用人群或补充说明"></textarea></label>
+            <div class="knowledge-form-actions">
+              <button id="cancelPackageButton" type="button">取消</button>
+              <button class="primary" type="submit">创建套餐</button>
+            </div>
+          </form>
+          <div id="packageList" class="knowledge-list"></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="analyticsView" class="view hidden">
+      <div class="analytics-toolbar">
+        <div>
+          <h2>运营分析</h2>
+          <p class="subtitle">跟踪客服命中情况、线索转化和待补充的知识库问题。</p>
+        </div>
+        <div class="analytics-actions">
+          <button id="refreshAnalyticsButton" type="button">刷新数据</button>
+        </div>
+      </div>
+
+      <div class="stats-grid" id="statsGrid">
+        <article class="stat-card"><div class="stat-label">咨询次数</div><div class="stat-value" data-stat="totalChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">线索总数</div><div class="stat-value" data-stat="totalLeads">-</div></article>
+        <article class="stat-card"><div class="stat-label">新线索</div><div class="stat-value" data-stat="newLeads">-</div></article>
+        <article class="stat-card"><div class="stat-label">已联系</div><div class="stat-value" data-stat="contactedLeads">-</div></article>
+        <article class="stat-card"><div class="stat-label">已预约</div><div class="stat-value" data-stat="bookedLeads">-</div></article>
+        <article class="stat-card"><div class="stat-label">转化率</div><div class="stat-value" data-stat="conversionRate">-</div></article>
+        <article class="stat-card"><div class="stat-label">FAQ 命中</div><div class="stat-value" data-stat="faqMatchedChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">套餐命中</div><div class="stat-value" data-stat="packageMatchedChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">待人工问题</div><div class="stat-value" data-stat="humanRequiredChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">未匹配问题</div><div class="stat-value" data-stat="openUnanswered">-</div></article>
+        <article class="stat-card"><div class="stat-label">AI 回答</div><div class="stat-value" data-stat="aiAnsweredChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">AI 降级</div><div class="stat-value" data-stat="aiFallbackChats">-</div></article>
+        <article class="stat-card"><div class="stat-label">高意向咨询</div><div class="stat-value" data-stat="highIntentChats">-</div></article>
+      </div>
+
+      <section class="analytics-panel">
+        <div class="analytics-panel-header">
+          <div>
+            <h2>未匹配问题</h2>
+            <p class="subtitle">将高频问题补充到 FAQ 或套餐后，可标记为已解决。</p>
+          </div>
+          <div class="filters">
+            <label for="unansweredStatusFilter">状态</label>
+            <select id="unansweredStatusFilter">
+              <option value="open">待处理</option>
+              <option value="reviewed">已查看</option>
+              <option value="resolved">已解决</option>
+              <option value="ignored">已忽略</option>
+              <option value="all">全部</option>
+            </select>
+          </div>
+        </div>
+        <div id="unansweredEmpty" class="knowledge-empty">请输入门店账号登录。</div>
+        <div id="unansweredList" class="question-list"></div>
+      </section>
+    </section>
+  </main>
+  <div class="toast hidden" id="toast"></div>
+  <div class="modal-backdrop hidden" id="faqModal" aria-hidden="true">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="faqModalTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="faqModalTitle">将问题转为 FAQ</h2>
+          <p class="subtitle">保存后会自动将该问题标记为“已解决”。</p>
+        </div>
+        <button class="modal-close" id="closeFaqModalButton" type="button" aria-label="关闭">×</button>
+      </div>
+      <form id="unansweredFaqForm" class="modal-form">
+        <div class="modal-question" id="sourceQuestionText"></div>
+        <label>分类<input id="unansweredFaqCategory" required placeholder="例如：婚纱照"></label>
+        <label>关键词<input id="unansweredFaqKeywords" required placeholder="用逗号分隔，例如：婚纱,婚照"></label>
+        <label>客服回复<textarea id="unansweredFaqAnswer" required placeholder="输入客户看到的正式回复内容"></textarea></label>
+        <div class="knowledge-form-actions">
+          <button id="cancelUnansweredFaqButton" type="button">取消</button>
+          <button class="primary" id="submitUnansweredFaqButton" type="submit">创建 FAQ 并标记已解决</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <script>
+    const API_BASE_URL = "https://photo-studio-prod-d2drpjd43ee075-1384636564.ap-shanghai.app.tcloudbase.com";
+    const STUDIO_ID = "demo-studio";
+    const statusLabels = {
+      new: "新线索",
+      contacted: "已联系",
+      booked: "已预约",
+      completed: "已完成",
+      invalid: "无效"
+    };
+    const unansweredStatusLabels = {
+      open: "待处理",
+      reviewed: "已查看",
+      resolved: "已解决",
+      ignored: "已忽略"
+    };
+    let apiToken = "";
+    let adminSession = null;
+    let leads = [];
+    let faqs = [];
+    let packages = [];
+    let analyticsStats = null;
+    let unansweredQuestions = [];
+    let faqSourceQuestionId = "";
+    let customers = [];
+    let currentCustomerKey = "";
+    let currentCustomerDetail = null;
+    let dashboardLoadedAt = null;
+
+    const $ = (selector) => document.querySelector(selector);
+    const statusFilter = $("#statusFilter");
+    const unansweredStatusFilter = $("#unansweredStatusFilter");
+    const customerSearchInput = $("#customerSearchInput");
+    const customerAttentionFilter = $("#customerAttentionFilter");
+
+    function readStoredAdminSession() {
+      try {
+        const stored = JSON.parse(sessionStorage.getItem("photoStudioAdminSession") || "null");
+        return stored && stored.token ? stored : null;
+      } catch {
+        return null;
+      }
+    }
+
+    adminSession = readStoredAdminSession();
+
+    function hasAdminAuth() {
+      return Boolean((adminSession && adminSession.token) || apiToken);
+    }
+
+    function getCurrentStudioId() {
+      return adminSession && adminSession.user && adminSession.user.studioId
+        ? adminSession.user.studioId
+        : STUDIO_ID;
+    }
+
+    function setAuthUi() {
+      const loggedIn = Boolean(adminSession && adminSession.token);
+      $("#authStatus").textContent = loggedIn
+        ? `${adminSession.user.name || adminSession.user.email || "已登录"} · ${adminSession.user.role || "staff"} · ${adminSession.user.studioId}`
+        : "未登录";
+    }
+
+    function storeAdminSession(session) {
+      adminSession = session;
+      sessionStorage.setItem("photoStudioAdminSession", JSON.stringify(session));
+      setAuthUi();
+    }
+
+    function clearAdminSession() {
+      adminSession = null;
+      apiToken = "";
+      sessionStorage.removeItem("photoStudioAdminSession");
+      sessionStorage.removeItem("photoStudioAdminToken");
+      setAuthUi();
+    }
+
+    function showToast(message) {
+      const toast = $("#toast");
+      toast.textContent = message;
+      toast.classList.remove("hidden");
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => toast.classList.add("hidden"), 2400);
+    }
+
+    function formatDate(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("zh-CN");
+    }
+
+    function formatDateTimeLocalValue(value) {
+      if (!value) return "";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "";
+      const pad = (number) => String(number).padStart(2, "0");
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    function isToday(value) {
+      if (!value) return false;
+      const date = new Date(value);
+      const now = new Date();
+      return !Number.isNaN(date.getTime()) &&
+        date.getFullYear() === now.getFullYear() &&
+        date.getMonth() === now.getMonth() &&
+        date.getDate() === now.getDate();
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function splitLines(value) {
+      return String(value ?? "")
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    function formatKnowledgeDate(value) {
+      if (!value) return "尚未记录时间";
+      return formatDate(value);
+    }
+
+    function getCustomerName(customer) {
+      if (!customer) return "未选择客户";
+      return customer.name ||
+        customer.douyinNickName ||
+        customer.contact ||
+        customer.userId ||
+        customer.anonymousId ||
+        customer.key ||
+        "匿名客户";
+    }
+
+    function getAvatarInitial(customer) {
+      const text = getCustomerName(customer);
+      return text && text !== "匿名客户" ? text.slice(0, 1) : "客";
+    }
+
+    function renderCustomerAvatar(customer, sizeClass = "") {
+      const className = `customer-avatar ${sizeClass}`.trim();
+      if (customer && customer.douyinAvatarUrl) {
+        return `<img class="${className}" src="${escapeHtml(customer.douyinAvatarUrl)}" alt="">`;
+      }
+
+      return `<span class="${className}">${escapeHtml(getAvatarInitial(customer))}</span>`;
+    }
+
+    function renderDouyinMeta(customer) {
+      if (!customer || !customer.douyinNickName) {
+        return "抖音资料未授权";
+      }
+
+      return `抖音：${customer.douyinNickName}`;
+    }
+
+    function getCustomerMeta(customer) {
+      const parts = [
+        customer.serviceType,
+        customer.destination,
+        customer.preferredDate,
+        customer.groupSize,
+        customer.budget
+      ].filter(Boolean);
+      return parts.length ? parts.join(" · ") : "暂无明确需求";
+    }
+
+    function getCustomerSearchText(customer) {
+      return [
+        getCustomerName(customer),
+        customer.douyinNickName,
+        customer.contact,
+        customer.serviceType,
+        customer.destination,
+        customer.preferredDate,
+        customer.budget,
+        customer.groupSize,
+        customer.status,
+        customer.staffNote,
+        customer.assignedTo,
+        customer.lastMessage,
+        customer.lastReply,
+        customer.userId,
+        customer.anonymousId,
+        customer.key
+      ].filter(Boolean).join(" ").toLowerCase();
+    }
+
+    function matchesCustomerFilter(customer) {
+      const keyword = customerSearchInput.value.trim().toLowerCase();
+      const filter = customerAttentionFilter.value;
+
+      if (keyword && !getCustomerSearchText(customer).includes(keyword)) {
+        return false;
+      }
+
+      if (filter === "attention") return Boolean(customer.needsAttention);
+      if (filter === "unread") return Boolean(customer.unread);
+      if (filter === "followUp") return Boolean(customer.followUpOverdue || customer.followUpAt);
+      if (filter === "human") return Boolean(customer.humanHandoff || customer.needsHumanCount > 0);
+      if (filter === "highIntent") return Boolean(customer.highIntent);
+      return true;
+    }
+
+    function getFilteredCustomers() {
+      return customers.filter(matchesCustomerFilter);
+    }
+
+    function renderCustomerBadges(customer) {
+      const badges = [];
+
+      if (customer.unread) badges.push('<span class="attention-badge unread">未读</span>');
+      if (customer.followUpOverdue) badges.push('<span class="attention-badge follow-up">待跟进</span>');
+      if (customer.humanHandoff || customer.needsHumanCount > 0) badges.push('<span class="attention-badge human">需人工</span>');
+      if (customer.highIntent) badges.push('<span class="attention-badge intent">高意向</span>');
+
+      return badges.length
+        ? `<span class="customer-badges">${badges.join("")}</span>`
+        : "";
+    }
+
+    function getDashboardStats() {
+      const todayActiveCustomers = customers.filter((customer) =>
+        isToday(customer.lastCustomerMessageAt || customer.lastActiveAt)
+      ).length;
+      const attentionCustomers = customers.filter((customer) => customer.needsAttention).length;
+      const humanCustomers = customers.filter((customer) =>
+        customer.humanHandoff || customer.needsHumanCount > 0
+      ).length;
+      const bookedLeads = analyticsStats && typeof analyticsStats.bookedLeads === "number"
+        ? analyticsStats.bookedLeads
+        : leads.filter((lead) => lead.status === "booked").length;
+
+      return {
+        todayActiveCustomers,
+        attentionCustomers,
+        humanCustomers,
+        bookedLeads
+      };
+    }
+
+    function renderDashboardStats() {
+      const stats = getDashboardStats();
+      document.querySelectorAll("[data-dashboard-stat]").forEach((node) => {
+        const key = node.dataset.dashboardStat;
+        node.textContent = typeof stats[key] === "number" ? String(stats[key]) : "-";
+      });
+      $("#dashboardSyncStatus").textContent = dashboardLoadedAt
+        ? `更新于 ${formatDate(dashboardLoadedAt)}`
+        : "尚未连接";
+    }
+
+    function renderPriorityCustomers() {
+      const list = $("#priorityCustomerList");
+      const priorityCustomers = customers
+        .filter((customer) => customer.needsAttention)
+        .slice(0, 8);
+
+      if (!priorityCustomers.length) {
+        list.innerHTML = '<div class="overview-empty">暂无需要优先处理的客户。</div>';
+        return;
+      }
+
+      list.innerHTML = priorityCustomers.map((customer) => `
+        <article class="overview-item">
+          <div class="customer-identity">
+            ${renderCustomerAvatar(customer)}
+            <div class="overview-item-main">
+              <div class="overview-item-title">
+                <span>${escapeHtml(getCustomerName(customer))}</span>
+                ${renderCustomerBadges(customer)}
+              </div>
+              <div class="overview-item-meta">${escapeHtml(renderDouyinMeta(customer))}</div>
+              <div class="overview-item-meta">${escapeHtml(getCustomerMeta(customer))} · ${escapeHtml(formatDate(customer.lastActiveAt))}</div>
+            </div>
+          </div>
+          <button type="button" data-open-customer="${escapeHtml(customer.key)}">处理</button>
+        </article>
+      `).join("");
+
+      list.querySelectorAll("[data-open-customer]").forEach((button) => {
+        button.addEventListener("click", () => openCustomer(button.dataset.openCustomer));
+      });
+    }
+
+    function renderOperationsChecklist() {
+      const list = $("#operationsChecklist");
+      const stats = getDashboardStats();
+      const items = [
+        stats.humanCustomers
+          ? `有 ${stats.humanCustomers} 位客户需要人工确认，建议优先接管。`
+          : "当前没有明显需要人工接管的会话。",
+        stats.attentionCustomers
+          ? `还有 ${stats.attentionCustomers} 位客户需要跟进或查看。`
+          : "客户跟进状态良好。",
+        unansweredQuestions.filter((item) => item.status === "open").length
+          ? "未匹配问题有待补充，建议每天闭店前处理一次。"
+          : "未匹配问题暂时没有积压。"
+      ];
+
+      list.innerHTML = items.map((item) => `
+        <div class="overview-item">
+          <div class="overview-item-main">
+            <div class="overview-item-title">${escapeHtml(item)}</div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderDashboard() {
+      renderDashboardStats();
+      renderPriorityCustomers();
+      renderOperationsChecklist();
+    }
+
+    function renderCustomerList() {
+      const list = $("#customerList");
+      const filteredCustomers = getFilteredCustomers();
+
+      if (!customers.length) {
+        $("#customerCount").textContent = "0 位客户";
+        list.innerHTML = '<div class="empty">暂无客户咨询记录。</div>';
+        renderCustomerDetail(null);
+        renderDashboard();
+        return;
+      }
+
+      if (!filteredCustomers.length) {
+        $("#customerCount").textContent = `0 / ${customers.length} 位客户`;
+        list.innerHTML = '<div class="empty">没有符合筛选条件的客户。</div>';
+        renderDashboard();
+        return;
+      }
+
+      $("#customerCount").textContent = `${filteredCustomers.length} / ${customers.length} 位客户`;
+      list.innerHTML = filteredCustomers.map((customer) => {
+        const key = customer.key;
+        const status = statusLabels[customer.status] ? customer.status : "new";
+        const active = key === currentCustomerKey ? "active" : "";
+        return `
+          <button class="customer-item ${active}" type="button" data-customer-key="${escapeHtml(key)}">
+            <div class="customer-identity">
+              ${renderCustomerAvatar(customer)}
+              <div class="customer-name-block">
+                <div class="customer-title-row">
+                  <span class="customer-title">${escapeHtml(getCustomerName(customer))}</span>
+                  <span class="status status-${status}">${statusLabels[status]}</span>
+                </div>
+                <div class="customer-douyin">${escapeHtml(renderDouyinMeta(customer))}</div>
+              </div>
+            </div>
+            <div class="customer-preview">${escapeHtml(customer.lastMessage || customer.lastReply || "暂无对话摘要")}</div>
+            ${renderCustomerBadges(customer)}
+            <div class="customer-meta-row">
+              <span>${escapeHtml(getCustomerMeta(customer))}</span>
+              <span>${escapeHtml(formatDate(customer.lastActiveAt))}</span>
+            </div>
+          </button>
+        `;
+      }).join("");
+
+      list.querySelectorAll(".customer-item").forEach((button) => {
+        button.addEventListener("click", () => loadCustomerDetail(button.dataset.customerKey));
+      });
+      renderDashboard();
+    }
+
+    function renderChatMessages(messages) {
+      const timeline = $("#customerChatTimeline");
+
+      if (!messages.length) {
+        timeline.innerHTML = '<div class="empty">该客户暂无聊天记录。</div>';
+        return;
+      }
+
+      timeline.innerHTML = messages.map((message) => `
+        <article class="chat-pair">
+          <div class="chat-bubble user">${escapeHtml(message.userMessage || "")}</div>
+          <div class="chat-bubble bot">${escapeHtml(message.reply || "")}</div>
+          <div class="chat-meta">
+            ${escapeHtml(formatDate(message.createdAt))}
+            ${message.answerSource ? ` · ${escapeHtml(message.answerSource)}` : ""}
+            ${message.matchType ? ` · ${escapeHtml(message.matchType)}` : ""}
+          </div>
+        </article>
+      `).join("");
+    }
+
+    function renderLeadCards(leadsForCustomer) {
+      if (!leadsForCustomer.length) {
+        return '<div class="lead-meta">暂无预约线索。客户明确预约或提交表单后会显示在这里。</div>';
+      }
+
+      return leadsForCustomer.map((lead) => {
+        const id = lead._id || lead.id;
+        const status = statusLabels[lead.status] ? lead.status : "new";
+        return `
+          <article class="lead-card" data-id="${escapeHtml(id)}">
+            <div class="customer-title-row">
+              <strong>${escapeHtml(lead.serviceType || "未填写服务")}</strong>
+              <span class="status status-${status}">${statusLabels[status]}</span>
+            </div>
+            <div class="lead-meta">联系方式：${escapeHtml(lead.contact || "-")}</div>
+            <div class="lead-meta">日期：${escapeHtml(lead.preferredDate || "未填写")} · 预算：${escapeHtml(lead.budget || "未填写")}</div>
+            <div class="lead-meta">${escapeHtml(lead.note || "")}</div>
+            <div class="lead-card-actions">
+              <select class="customer-lead-status" aria-label="线索状态">
+                ${Object.entries(statusLabels).map(([key, label]) => `<option value="${key}" ${key === status ? "selected" : ""}>${label}</option>`).join("")}
+              </select>
+              <textarea class="customer-lead-note" placeholder="内部备注">${escapeHtml(lead.staffNote || "")}</textarea>
+              <button class="customer-lead-save primary" type="button">保存跟进</button>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderCustomerDetail(detail) {
+      const customer = detail && detail.customer;
+      const messages = detail && Array.isArray(detail.messages) ? detail.messages : [];
+      const leadsForCustomer = detail && Array.isArray(detail.leads) ? detail.leads : [];
+      const detailNode = $("#customerDetail");
+
+      if (!customer) {
+        $("#customerChatTitle").textContent = "聊天记录";
+        $("#customerChatSubtitle").textContent = "选择左侧客户查看完整对话。";
+        $("#customerChatTimeline").innerHTML = '<div class="empty">请选择一个客户。</div>';
+        detailNode.innerHTML = '<div class="empty">请选择一个客户。</div>';
+        return;
+      }
+
+      $("#customerChatTitle").textContent = getCustomerName(customer);
+      $("#customerChatSubtitle").textContent = getCustomerMeta(customer);
+      renderChatMessages(messages);
+      const contactText = customer.contact || "";
+      const phoneHref = contactText && /^[+\d\s-]{6,}$/.test(contactText)
+        ? `tel:${contactText.replace(/[^\d+]/g, "")}`
+        : "";
+      detailNode.innerHTML = `
+        <section class="detail-group">
+          <div class="customer-profile-card">
+            ${renderCustomerAvatar(customer, "large")}
+            <div class="customer-profile-main">
+              <div class="customer-profile-name">${escapeHtml(getCustomerName(customer))}</div>
+              <div class="customer-profile-meta">${escapeHtml(renderDouyinMeta(customer))}</div>
+              <div class="customer-profile-meta">${escapeHtml(customer.contact || "暂未留下联系方式")}</div>
+            </div>
+          </div>
+        </section>
+        <section class="detail-group">
+          <div class="customer-state-actions">
+            <div>${renderCustomerBadges(customer) || '<span class="lead-meta">暂无待处理标记</span>'}</div>
+            <button class="mark-read-button" type="button">标记已读</button>
+          </div>
+          <div class="customer-quick-actions">
+            ${phoneHref ? `<a class="quick-action" href="${escapeHtml(phoneHref)}">拨打电话</a>` : ""}
+            ${contactText ? `<button class="quick-action copy-contact-button" type="button" data-contact="${escapeHtml(contactText)}">复制联系方式</button>` : ""}
+            <button class="quick-action human-handoff-button ${customer.humanHandoff ? "human-handoff-active" : ""}" type="button">
+              ${customer.humanHandoff ? "取消人工接管" : "标记人工接管"}
+            </button>
+          </div>
+          <div class="customer-state-form">
+            <label>跟进负责人<input class="customer-assignee" value="${escapeHtml(customer.assignedTo || "")}" placeholder="例如：小王"></label>
+            <label>下次跟进时间<input class="customer-follow-up" type="datetime-local" value="${escapeHtml(formatDateTimeLocalValue(customer.followUpAt))}"></label>
+            <div class="customer-state-actions">
+              <span class="lead-meta">${customer.followUpAt ? `下次跟进：${escapeHtml(formatDate(customer.followUpAt))}` : "尚未设置下次跟进时间"}</span>
+              <button class="save-customer-state primary" type="button">保存跟进设置</button>
+            </div>
+          </div>
+        </section>
+        <section class="detail-group">
+          <div class="detail-row"><span class="detail-label">抖音昵称</span><span class="detail-value">${escapeHtml(customer.douyinNickName || "未授权")}</span></div>
+          <div class="detail-row"><span class="detail-label">用户ID</span><span class="detail-value">${escapeHtml(customer.userId || "未登录")}</span></div>
+          <div class="detail-row"><span class="detail-label">匿名ID</span><span class="detail-value">${escapeHtml(customer.anonymousId || "-")}</span></div>
+          <div class="detail-row"><span class="detail-label">会话数</span><span class="detail-value">${Number(customer.sessionCount || 0)} 个</span></div>
+          <div class="detail-row"><span class="detail-label">咨询数</span><span class="detail-value">${Number(customer.chatCount || 0)} 次</span></div>
+          <div class="detail-row"><span class="detail-label">最近活跃</span><span class="detail-value">${escapeHtml(formatDate(customer.lastActiveAt))}</span></div>
+        </section>
+        <section class="detail-group">
+          <div class="detail-row"><span class="detail-label">联系方式</span><span class="detail-value">${escapeHtml(customer.contact || "未填写")}</span></div>
+          <div class="detail-row"><span class="detail-label">服务</span><span class="detail-value">${escapeHtml(customer.serviceType || "未明确")}</span></div>
+          <div class="detail-row"><span class="detail-label">目的地</span><span class="detail-value">${escapeHtml(customer.destination || "-")}</span></div>
+          <div class="detail-row"><span class="detail-label">日期</span><span class="detail-value">${escapeHtml(customer.preferredDate || "-")}</span></div>
+          <div class="detail-row"><span class="detail-label">预算</span><span class="detail-value">${escapeHtml(customer.budget || "-")}</span></div>
+          <div class="detail-row"><span class="detail-label">人数</span><span class="detail-value">${escapeHtml(customer.groupSize || "-")}</span></div>
+        </section>
+        <section class="detail-group">
+          <h2>预约线索</h2>
+          ${renderLeadCards(leadsForCustomer)}
+        </section>
+      `;
+
+      detailNode.querySelectorAll(".customer-lead-save").forEach((button) => {
+        button.addEventListener("click", () => updateCustomerLead(button.closest("[data-id]")));
+      });
+      const saveStateButton = detailNode.querySelector(".save-customer-state");
+      if (saveStateButton) {
+        saveStateButton.addEventListener("click", () => saveCurrentCustomerState(saveStateButton));
+      }
+      const markReadButton = detailNode.querySelector(".mark-read-button");
+      if (markReadButton) {
+        markReadButton.addEventListener("click", () => markCurrentCustomerRead(markReadButton));
+      }
+      const handoffButton = detailNode.querySelector(".human-handoff-button");
+      if (handoffButton) {
+        handoffButton.addEventListener("click", () => toggleCurrentCustomerHandoff(handoffButton));
+      }
+      const copyContactButton = detailNode.querySelector(".copy-contact-button");
+      if (copyContactButton) {
+        copyContactButton.addEventListener("click", () => copyText(copyContactButton.dataset.contact));
+      }
+    }
+
+    async function request(path, options = {}) {
+      const method = (options.method || "GET").toUpperCase();
+      const headers = {
+        ...(options.headers || {})
+      };
+
+      if (adminSession && adminSession.token) {
+        headers.Authorization = `Bearer ${adminSession.token}`;
+      } else if (apiToken) {
+        headers["X-Admin-Token"] = apiToken;
+      }
+
+      if (method !== "GET" && method !== "HEAD") {
+        headers["Content-Type"] = "application/json";
+      }
+
+      const response = await fetch(API_BASE_URL + path, {
+        ...options,
+        headers
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `请求失败：${response.status}`);
+      }
+      return data;
+    }
+
+    async function copyText(value) {
+      if (!value) return;
+
+      try {
+        await navigator.clipboard.writeText(value);
+        showToast("联系方式已复制");
+      } catch {
+        showToast(value);
+      }
+    }
+
+    async function updateCustomerState(customerKey, patch, button) {
+      if (!customerKey) return;
+      if (button) button.disabled = true;
+
+      try {
+        const data = await request(`/api/photo-studio/admin/customers/${encodeURIComponent(customerKey)}/state`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            studioId: getCurrentStudioId(),
+            ...patch
+          })
+        });
+        const updatedState = data.state || {};
+        customers = customers.map((customer) => {
+          if (customer.key !== customerKey) return customer;
+          const humanHandoff = Object.prototype.hasOwnProperty.call(patch, "humanHandoff")
+            ? Boolean(patch.humanHandoff)
+            : Boolean(customer.humanHandoff);
+          const followUpAt = Object.prototype.hasOwnProperty.call(updatedState, "followUpAt")
+            ? updatedState.followUpAt
+            : customer.followUpAt;
+          const followUpOverdue = followUpAt
+            ? new Date(followUpAt).getTime() <= Date.now()
+            : false;
+          const unread = patch.markRead ? false : customer.unread;
+          return {
+            ...customer,
+            ...updatedState,
+            unread,
+            humanHandoff,
+            followUpAt,
+            followUpOverdue,
+            needsAttention: Boolean(
+              unread ||
+              followUpOverdue ||
+              humanHandoff ||
+              customer.needsHumanCount > 0 ||
+              (customer.leadCount > 0 && customer.status === "new")
+            )
+          };
+        });
+        renderCustomerList();
+        renderDashboard();
+        if (currentCustomerKey === customerKey) {
+          await loadCustomerDetail(customerKey, { keepList: true });
+        }
+        showToast("客户跟进状态已更新");
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        if (button) button.disabled = false;
+      }
+    }
+
+    async function saveCurrentCustomerState(button) {
+      if (!currentCustomerKey) return;
+      const detailNode = $("#customerDetail");
+      await updateCustomerState(currentCustomerKey, {
+        assignedTo: detailNode.querySelector(".customer-assignee").value,
+        followUpAt: detailNode.querySelector(".customer-follow-up").value
+      }, button);
+    }
+
+    async function markCurrentCustomerRead(button) {
+      if (!currentCustomerKey) return;
+      await updateCustomerState(currentCustomerKey, {
+        markRead: true
+      }, button);
+    }
+
+    async function toggleCurrentCustomerHandoff(button) {
+      if (!currentCustomerDetail || !currentCustomerDetail.customer) return;
+      await updateCustomerState(currentCustomerKey, {
+        humanHandoff: !currentCustomerDetail.customer.humanHandoff
+      }, button);
+    }
+
+    function openView(viewId) {
+      document.querySelectorAll(".tab-button").forEach((item) => {
+        item.classList.toggle("active", item.dataset.view === viewId);
+      });
+      document.querySelectorAll(".view").forEach((view) => {
+        view.classList.toggle("hidden", view.id !== viewId);
+      });
+    }
+
+    async function openCustomer(customerKey) {
+      openView("customersView");
+      await loadCustomerDetail(customerKey);
+    }
+
+    function render() {
+      const body = $("#leadBody");
+      const table = $("#leadTable");
+      const empty = $("#emptyState");
+      const error = $("#errorState");
+      body.innerHTML = "";
+      error.classList.add("hidden");
+
+      if (!leads.length) {
+        table.classList.add("hidden");
+        empty.classList.remove("hidden");
+        empty.textContent = "当前筛选条件下没有线索。";
+        $("#count").textContent = "0 条线索";
+        return;
+      }
+
+      empty.classList.add("hidden");
+      table.classList.remove("hidden");
+      $("#count").textContent = `${leads.length} 条线索`;
+      body.innerHTML = leads.map((lead) => {
+        const id = lead._id || lead.id;
+        const status = statusLabels[lead.status] ? lead.status : "new";
+        return `
+          <tr data-id="${escapeHtml(id)}">
+            <td>
+              <div class="lead-name">${escapeHtml(lead.name || lead.douyinNickName || "未填写")}</div>
+              <div class="lead-meta">${escapeHtml(lead.douyinNickName ? `抖音：${lead.douyinNickName}` : "抖音资料未授权")}</div>
+              <div class="lead-meta">${escapeHtml(lead.source || "-")}</div>
+            </td>
+            <td>${escapeHtml(lead.serviceType || "未填写")}<div class="lead-meta">${escapeHtml(lead.note || "")}</div></td>
+            <td>${escapeHtml(lead.preferredDate || "未填写")}</td>
+            <td>${escapeHtml(lead.budget || "未填写")}<div class="lead-meta">${escapeHtml(lead.contact || "-")}</div></td>
+            <td>
+              <div class="row-actions">
+                <select class="status-select" aria-label="线索状态">
+                  ${Object.entries(statusLabels).map(([key, label]) => `<option value="${key}" ${key === status ? "selected" : ""}>${label}</option>`).join("")}
+                </select>
+                <button class="save-button primary" type="button">保存</button>
+              </div>
+              <input class="note-input" value="${escapeHtml(lead.staffNote || "")}" placeholder="内部备注">
+              <div class="lead-meta"><span class="status status-${status}">${statusLabels[status]}</span></div>
+            </td>
+            <td>${escapeHtml(formatDate(lead.createdAt))}</td>
+          </tr>
+        `;
+      }).join("");
+
+      body.querySelectorAll(".save-button").forEach((button) => {
+        button.addEventListener("click", () => updateLead(button.closest("tr")));
+      });
+    }
+
+    async function loadLeads() {
+      if (!hasAdminAuth()) {
+        $("#count").textContent = "尚未连接";
+        return;
+      }
+
+      $("#refreshButton").disabled = true;
+      try {
+        const query = new URLSearchParams({
+          studioId: getCurrentStudioId(),
+          status: statusFilter.value
+        });
+        const data = await request(`/api/photo-studio/admin/leads?${query}`);
+        leads = Array.isArray(data.leads) ? data.leads : [];
+        render();
+      } catch (error) {
+        $("#leadTable").classList.add("hidden");
+        $("#emptyState").classList.add("hidden");
+        $("#errorState").textContent = error instanceof TypeError
+          ? "浏览器无法访问接口，请检查 CloudBase 跨域设置或强制刷新页面。"
+          : error.message;
+        $("#errorState").classList.remove("hidden");
+        $("#count").textContent = "连接失败";
+      } finally {
+        $("#refreshButton").disabled = false;
+      }
+    }
+
+    async function loadCustomers() {
+      if (!hasAdminAuth()) {
+        $("#customerCount").textContent = "尚未连接";
+        return;
+      }
+
+      $("#refreshCustomersButton").disabled = true;
+      try {
+        const query = new URLSearchParams({
+          studioId: getCurrentStudioId(),
+          limit: "80"
+        });
+        const data = await request(`/api/photo-studio/admin/customers?${query}`);
+        customers = Array.isArray(data.customers) ? data.customers : [];
+        currentCustomerKey = currentCustomerKey ||
+          (customers[0] && customers[0].key) ||
+          "";
+        renderCustomerList();
+
+        if (currentCustomerKey) {
+          await loadCustomerDetail(currentCustomerKey, { keepList: true });
+        } else {
+          renderCustomerDetail(null);
+        }
+      } catch (error) {
+        $("#customerCount").textContent = "连接失败";
+        $("#customerList").innerHTML = `<div class="error">${escapeHtml(error instanceof TypeError ? "浏览器无法访问接口，请检查 CloudBase 跨域设置。" : error.message)}</div>`;
+        renderCustomerDetail(null);
+      } finally {
+        $("#refreshCustomersButton").disabled = false;
+      }
+    }
+
+    async function loadCustomerDetail(customerKey, options = {}) {
+      if (!hasAdminAuth() || !customerKey) return;
+
+      currentCustomerKey = customerKey;
+      if (!options.keepList) {
+        renderCustomerList();
+      }
+
+      $("#customerChatTimeline").innerHTML = '<div class="empty">正在加载聊天记录...</div>';
+      $("#customerDetail").innerHTML = '<div class="empty">正在加载客户资料...</div>';
+
+      try {
+        const query = new URLSearchParams({ studioId: getCurrentStudioId() });
+        const data = await request(`/api/photo-studio/admin/customers/${encodeURIComponent(customerKey)}?${query}`);
+        currentCustomerDetail = data;
+        renderCustomerDetail(data);
+      } catch (error) {
+        currentCustomerDetail = null;
+        $("#customerChatTimeline").innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`;
+        $("#customerDetail").innerHTML = '<div class="empty">客户资料加载失败。</div>';
+      }
+    }
+
+    function renderFaqs() {
+      const list = $("#faqList");
+      $("#faqCount").textContent = `${faqs.length} 条`;
+
+      if (!faqs.length) {
+        list.innerHTML = '<div class="knowledge-empty">暂无 FAQ，点击“新增 FAQ”开始。</div>';
+        return;
+      }
+
+      list.innerHTML = faqs.map((faq) => {
+        const id = faq._id || faq.id;
+        return `
+          <div class="knowledge-item ${faq.enabled ? "" : "disabled"}" data-faq-id="${escapeHtml(id)}">
+            <div class="knowledge-item-header">
+              <div>
+                <div class="knowledge-item-title">${escapeHtml(faq.category || "未分类")}</div>
+                <div class="knowledge-item-meta">${faq.enabled ? "启用中" : "已停用"} · ${escapeHtml(formatKnowledgeDate(faq.updatedAt))}</div>
+              </div>
+              <span class="status ${faq.enabled ? "status-booked" : "status-invalid"}">${faq.enabled ? "启用" : "停用"}</span>
+            </div>
+            <label class="field-label">分类<input class="faq-category" value="${escapeHtml(faq.category)}"></label>
+            <label class="field-label">关键词<input class="faq-keywords" value="${escapeHtml((faq.keywords || []).join(", "))}"></label>
+            <label class="field-label">客服回复<textarea class="faq-answer">${escapeHtml(faq.answer)}</textarea></label>
+            <div class="item-actions">
+              <button class="toggle-faq" type="button">${faq.enabled ? "停用" : "启用"}</button>
+              <button class="save-faq primary" type="button">保存</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      list.querySelectorAll(".save-faq").forEach((button) => {
+        button.addEventListener("click", () => updateFaq(button.closest("[data-faq-id]")));
+      });
+      list.querySelectorAll(".toggle-faq").forEach((button) => {
+        button.addEventListener("click", () => toggleFaq(button.closest("[data-faq-id]")));
+      });
+    }
+
+    function renderPackages() {
+      const list = $("#packageList");
+      $("#packageCount").textContent = `${packages.length} 条`;
+
+      if (!packages.length) {
+        list.innerHTML = '<div class="knowledge-empty">暂无套餐，点击“新增套餐”开始。</div>';
+        return;
+      }
+
+      list.innerHTML = packages.map((item) => {
+        const id = item._id || item.id;
+        return `
+          <div class="knowledge-item ${item.enabled ? "" : "disabled"}" data-package-id="${escapeHtml(id)}">
+            <div class="knowledge-item-header">
+              <div>
+                <div class="knowledge-item-title">${escapeHtml(item.name || "未命名套餐")}</div>
+                <div class="knowledge-item-meta">${escapeHtml(item.price || "未设置价格")} · ${item.enabled ? "启用中" : "已停用"} · ${escapeHtml(formatKnowledgeDate(item.updatedAt))}</div>
+              </div>
+              <span class="status ${item.enabled ? "status-booked" : "status-invalid"}">${item.enabled ? "启用" : "停用"}</span>
+            </div>
+            <label class="field-label">套餐名称<input class="package-name" value="${escapeHtml(item.name)}"></label>
+            <label class="field-label">分类<input class="package-category" value="${escapeHtml(item.category)}"></label>
+            <label class="field-label">价格<input class="package-price" value="${escapeHtml(item.price)}"></label>
+            <label class="field-label">包含内容<textarea class="package-items">${escapeHtml((item.items || []).join("\n"))}</textarea></label>
+            <label class="field-label">套餐说明<textarea class="package-description">${escapeHtml(item.description)}</textarea></label>
+            <div class="item-actions">
+              <button class="toggle-package" type="button">${item.enabled ? "停用" : "启用"}</button>
+              <button class="save-package primary" type="button">保存</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      list.querySelectorAll(".save-package").forEach((button) => {
+        button.addEventListener("click", () => updatePackage(button.closest("[data-package-id]")));
+      });
+      list.querySelectorAll(".toggle-package").forEach((button) => {
+        button.addEventListener("click", () => togglePackage(button.closest("[data-package-id]")));
+      });
+    }
+
+    async function loadKnowledge() {
+      if (!hasAdminAuth()) return;
+
+      $("#refreshKnowledgeButton").disabled = true;
+      try {
+        const query = new URLSearchParams({
+          studioId: getCurrentStudioId(),
+          type: "all"
+        });
+        const data = await request(`/api/photo-studio/admin/knowledge?${query}`);
+        faqs = Array.isArray(data.faqs) ? data.faqs : [];
+        packages = Array.isArray(data.packages) ? data.packages : [];
+        renderFaqs();
+        renderPackages();
+        renderDashboard();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        $("#refreshKnowledgeButton").disabled = false;
+      }
+    }
+
+    function renderStats() {
+      const stats = analyticsStats || {};
+      document.querySelectorAll("[data-stat]").forEach((node) => {
+        const key = node.dataset.stat;
+        const value = stats[key];
+        node.textContent = key === "conversionRate" && typeof value === "number"
+          ? `${value}%`
+          : typeof value === "number" ? String(value) : "-";
+      });
+    }
+
+    function renderUnansweredQuestions() {
+      const list = $("#unansweredList");
+      const empty = $("#unansweredEmpty");
+      list.innerHTML = "";
+
+      if (!unansweredQuestions.length) {
+        empty.classList.remove("hidden");
+        empty.textContent = "当前筛选条件下没有未匹配问题。";
+        return;
+      }
+
+      empty.classList.add("hidden");
+      list.innerHTML = unansweredQuestions.map((question) => {
+        const id = question._id || question.id;
+        const status = unansweredStatusLabels[question.status] ? question.status : "open";
+        return `
+          <article class="question-item" data-question-id="${escapeHtml(id)}">
+            <div class="question-header">
+              <div>
+                <div class="question-text">${escapeHtml(question.question || "未记录问题")}</div>
+                <div class="question-meta">出现 ${Number(question.count || 1)} 次 · 最近提问：${escapeHtml(formatDate(question.lastAskedAt || question.createdAt))}</div>
+              </div>
+              <span class="status status-${status === "open" ? "new" : status === "reviewed" ? "contacted" : status === "resolved" ? "booked" : "invalid"}">${unansweredStatusLabels[status]}</span>
+            </div>
+            <div class="question-controls">
+              <select class="unanswered-status" aria-label="问题处理状态">
+                ${Object.entries(unansweredStatusLabels).map(([key, label]) => `<option value="${key}" ${key === status ? "selected" : ""}>${label}</option>`).join("")}
+              </select>
+              <textarea class="unanswered-note" placeholder="内部备注，例如：已补充到 FAQ">${escapeHtml(question.staffNote || "")}</textarea>
+              <button class="convert-to-faq" type="button" ${status === "resolved" ? "disabled" : ""}>${status === "resolved" ? "已转为 FAQ" : "转为 FAQ"}</button>
+              <button class="save-unanswered primary" type="button">保存</button>
+            </div>
+          </article>
+        `;
+      }).join("");
+
+      list.querySelectorAll(".save-unanswered").forEach((button) => {
+        button.addEventListener("click", () => updateUnansweredQuestion(button.closest("[data-question-id]")));
+      });
+      list.querySelectorAll(".convert-to-faq").forEach((button) => {
+        button.addEventListener("click", () => openFaqModal(button.closest("[data-question-id]")));
+      });
+    }
+
+    async function loadAnalytics() {
+      if (!hasAdminAuth()) return;
+
+      $("#refreshAnalyticsButton").disabled = true;
+      try {
+        const statsQuery = new URLSearchParams({ studioId: getCurrentStudioId() });
+        const questionQuery = new URLSearchParams({
+          studioId: getCurrentStudioId(),
+          status: unansweredStatusFilter.value
+        });
+        const [statsData, questionsData] = await Promise.all([
+          request(`/api/photo-studio/admin/stats?${statsQuery}`),
+          request(`/api/photo-studio/admin/unanswered?${questionQuery}`)
+        ]);
+        analyticsStats = statsData.stats || null;
+        unansweredQuestions = Array.isArray(questionsData.questions) ? questionsData.questions : [];
+        renderStats();
+        renderUnansweredQuestions();
+        renderDashboard();
+      } catch (error) {
+        analyticsStats = null;
+        unansweredQuestions = [];
+        renderStats();
+        renderDashboard();
+        $("#unansweredList").innerHTML = "";
+        $("#unansweredEmpty").textContent = error instanceof TypeError
+          ? "浏览器无法访问接口，请检查 CloudBase 跨域设置。"
+          : error.message;
+        $("#unansweredEmpty").classList.remove("hidden");
+      } finally {
+        $("#refreshAnalyticsButton").disabled = false;
+      }
+    }
+
+    async function updateUnansweredQuestion(row) {
+      const id = row.dataset.questionId;
+      const button = row.querySelector(".save-unanswered");
+      button.disabled = true;
+      try {
+        await request(`/api/photo-studio/admin/unanswered/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: row.querySelector(".unanswered-status").value,
+            staffNote: row.querySelector(".unanswered-note").value
+          })
+        });
+        showToast("问题状态已更新");
+        await loadAnalytics();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function openFaqModal(row) {
+      const question = unansweredQuestions.find((item) => (item._id || item.id) === row.dataset.questionId);
+      if (!question) {
+        showToast("未找到该问题");
+        return;
+      }
+
+      faqSourceQuestionId = row.dataset.questionId;
+      $("#sourceQuestionText").textContent = question.question || "未记录问题";
+      $("#unansweredFaqCategory").value = question.category || "";
+      $("#unansweredFaqKeywords").value = question.question || "";
+      $("#unansweredFaqAnswer").value = "";
+      $("#faqModal").classList.remove("hidden");
+      $("#faqModal").setAttribute("aria-hidden", "false");
+      $("#unansweredFaqCategory").focus();
+    }
+
+    function closeFaqModal() {
+      faqSourceQuestionId = "";
+      $("#unansweredFaqForm").reset();
+      $("#faqModal").classList.add("hidden");
+      $("#faqModal").setAttribute("aria-hidden", "true");
+    }
+
+    async function createFaqFromQuestion(event) {
+      event.preventDefault();
+      const button = $("#submitUnansweredFaqButton");
+      button.disabled = true;
+
+      try {
+        const faqData = await request("/api/photo-studio/admin/knowledge/faqs", {
+          method: "POST",
+          body: JSON.stringify({
+            studioId: getCurrentStudioId(),
+            category: $("#unansweredFaqCategory").value,
+            keywords: $("#unansweredFaqKeywords").value,
+            answer: $("#unansweredFaqAnswer").value
+          })
+        });
+
+        try {
+          await request(`/api/photo-studio/admin/unanswered/${encodeURIComponent(faqSourceQuestionId)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              status: "resolved",
+              staffNote: `已转为 FAQ${faqData.id ? `：${faqData.id}` : ""}`
+            })
+          });
+          showToast("FAQ 已创建，问题已标记为已解决");
+        } catch (error) {
+          showToast(`FAQ 已创建，但问题状态更新失败：${error.message}`);
+        }
+
+        closeFaqModal();
+        await Promise.all([loadKnowledge(), loadAnalytics()]);
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function setFormVisible(formId, visible) {
+      $(formId).classList.toggle("hidden", !visible);
+    }
+
+    async function createFaq(event) {
+      event.preventDefault();
+      const button = event.target.querySelector("button[type=submit]");
+      button.disabled = true;
+      try {
+        await request("/api/photo-studio/admin/knowledge/faqs", {
+          method: "POST",
+          body: JSON.stringify({
+            studioId: getCurrentStudioId(),
+            category: $("#faqCategory").value,
+            keywords: $("#faqKeywords").value,
+            answer: $("#faqAnswer").value
+          })
+        });
+        event.target.reset();
+        setFormVisible("#faqForm", false);
+        showToast("FAQ 已创建");
+        await loadKnowledge();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function createPackage(event) {
+      event.preventDefault();
+      const button = event.target.querySelector("button[type=submit]");
+      button.disabled = true;
+      try {
+        await request("/api/photo-studio/admin/knowledge/packages", {
+          method: "POST",
+          body: JSON.stringify({
+            studioId: getCurrentStudioId(),
+            name: $("#packageName").value,
+            category: $("#packageCategory").value,
+            price: $("#packagePrice").value,
+            items: splitLines($("#packageItems").value),
+            description: $("#packageDescription").value
+          })
+        });
+        event.target.reset();
+        setFormVisible("#packageForm", false);
+        showToast("套餐已创建");
+        await loadKnowledge();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function updateFaq(row, enabledOverride) {
+      const button = row.querySelector(".save-faq") || row.querySelector(".toggle-faq");
+      button.disabled = true;
+      try {
+        const current = faqs.find((faq) => (faq._id || faq.id) === row.dataset.faqId);
+        await request(`/api/photo-studio/admin/knowledge/faqs/${encodeURIComponent(row.dataset.faqId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            category: row.querySelector(".faq-category").value,
+            keywords: row.querySelector(".faq-keywords").value,
+            answer: row.querySelector(".faq-answer").value,
+            enabled: typeof enabledOverride === "boolean" ? enabledOverride : current.enabled
+          })
+        });
+        showToast("FAQ 已更新");
+        await loadKnowledge();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function toggleFaq(row) {
+      const current = faqs.find((faq) => (faq._id || faq.id) === row.dataset.faqId);
+      updateFaq(row, !current.enabled);
+    }
+
+    async function updatePackage(row, enabledOverride) {
+      const button = row.querySelector(".save-package") || row.querySelector(".toggle-package");
+      button.disabled = true;
+      try {
+        const current = packages.find((item) => (item._id || item.id) === row.dataset.packageId);
+        await request(`/api/photo-studio/admin/knowledge/packages/${encodeURIComponent(row.dataset.packageId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: row.querySelector(".package-name").value,
+            category: row.querySelector(".package-category").value,
+            price: row.querySelector(".package-price").value,
+            items: splitLines(row.querySelector(".package-items").value),
+            description: row.querySelector(".package-description").value,
+            enabled: typeof enabledOverride === "boolean" ? enabledOverride : current.enabled
+          })
+        });
+        showToast("套餐已更新");
+        await loadKnowledge();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function togglePackage(row) {
+      const current = packages.find((item) => (item._id || item.id) === row.dataset.packageId);
+      updatePackage(row, !current.enabled);
+    }
+
+    async function updateLeadRecord(id, status, staffNote, button) {
+      button.disabled = true;
+      try {
+        await request(`/api/photo-studio/admin/leads/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status,
+            staffNote
+          })
+        });
+        showToast("线索已更新");
+        await Promise.all([
+          loadLeads(),
+          loadCustomers()
+        ]);
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function updateLead(row) {
+      await updateLeadRecord(
+        row.dataset.id,
+        row.querySelector(".status-select").value,
+        row.querySelector(".note-input").value,
+        row.querySelector(".save-button")
+      );
+    }
+
+    async function updateCustomerLead(row) {
+      await updateLeadRecord(
+        row.dataset.id,
+        row.querySelector(".customer-lead-status").value,
+        row.querySelector(".customer-lead-note").value,
+        row.querySelector(".customer-lead-save")
+      );
+
+      if (currentCustomerKey) {
+        await loadCustomerDetail(currentCustomerKey, { keepList: true });
+      }
+    }
+
+    function clearAdminData() {
+      customers = [];
+      leads = [];
+      faqs = [];
+      packages = [];
+      analyticsStats = null;
+      unansweredQuestions = [];
+      currentCustomerKey = "";
+      currentCustomerDetail = null;
+      dashboardLoadedAt = null;
+      $("#customerCount").textContent = "尚未连接";
+      $("#customerList").innerHTML = '<div class="empty">请输入门店账号登录。</div>';
+      renderCustomerDetail(null);
+      $("#priorityCustomerList").innerHTML = '<div class="overview-empty">请输入门店账号登录。</div>';
+      $("#operationsChecklist").innerHTML = '<div class="overview-empty">暂无提醒。</div>';
+      renderDashboard();
+      $("#count").textContent = "尚未连接";
+      $("#leadTable").classList.add("hidden");
+      $("#emptyState").classList.remove("hidden");
+      $("#emptyState").textContent = "请输入门店账号登录。";
+      renderStats();
+      $("#unansweredList").innerHTML = "";
+      $("#unansweredEmpty").textContent = "请输入门店账号登录。";
+      $("#unansweredEmpty").classList.remove("hidden");
+    }
+
+    function loadAllAdminData() {
+      dashboardLoadedAt = new Date();
+      renderDashboard();
+      Promise.all([
+        loadCustomers(),
+        loadLeads(),
+        loadKnowledge(),
+        loadAnalytics()
+      ]).then(() => {
+        dashboardLoadedAt = new Date();
+        renderDashboard();
+      }).catch(() => {
+        renderDashboard();
+      });
+    }
+
+    async function restoreAdminSession() {
+      setAuthUi();
+
+      if (!adminSession || !adminSession.token) {
+        window.location.replace("login.html");
+        return;
+      }
+
+      try {
+        const data = await request("/api/photo-studio/admin/auth/me");
+        if (data && data.user) {
+          storeAdminSession({
+            ...adminSession,
+            user: data.user
+          });
+        }
+        loadAllAdminData();
+      } catch (error) {
+        clearAdminSession();
+        window.location.replace("login.html");
+      }
+    }
+
+    function logoutAdmin() {
+      if (adminSession && adminSession.token) {
+        request("/api/photo-studio/admin/auth/logout", {
+          method: "POST",
+          body: JSON.stringify({})
+        }).catch(() => {});
+      }
+      clearAdminSession();
+      window.location.replace("login.html");
+    }
+
+    $("#logoutButton").addEventListener("click", logoutAdmin);
+    $("#refreshDashboardButton").addEventListener("click", loadAllAdminData);
+    $("#refreshCustomersButton").addEventListener("click", loadCustomers);
+    $("#refreshButton").addEventListener("click", loadLeads);
+    customerSearchInput.addEventListener("input", renderCustomerList);
+    customerAttentionFilter.addEventListener("change", renderCustomerList);
+    statusFilter.addEventListener("change", loadLeads);
+    document.querySelectorAll(".tab-button").forEach((button) => {
+      button.addEventListener("click", () => {
+        openView(button.dataset.view);
+        if (button.dataset.view === "customersView") loadCustomers();
+        if (button.dataset.view === "knowledgeView") loadKnowledge();
+        if (button.dataset.view === "analyticsView") loadAnalytics();
+      });
+    });
+    document.querySelectorAll("[data-open-view]").forEach((button) => {
+      button.addEventListener("click", () => openView(button.dataset.openView));
+    });
+    $("#addFaqButton").addEventListener("click", () => setFormVisible("#faqForm", true));
+    $("#cancelFaqButton").addEventListener("click", () => setFormVisible("#faqForm", false));
+    $("#faqForm").addEventListener("submit", createFaq);
+    $("#addPackageButton").addEventListener("click", () => setFormVisible("#packageForm", true));
+    $("#cancelPackageButton").addEventListener("click", () => setFormVisible("#packageForm", false));
+    $("#packageForm").addEventListener("submit", createPackage);
+    $("#refreshKnowledgeButton").addEventListener("click", loadKnowledge);
+    $("#refreshAnalyticsButton").addEventListener("click", loadAnalytics);
+    unansweredStatusFilter.addEventListener("change", loadAnalytics);
+    $("#closeFaqModalButton").addEventListener("click", closeFaqModal);
+    $("#cancelUnansweredFaqButton").addEventListener("click", closeFaqModal);
+    $("#unansweredFaqForm").addEventListener("submit", createFaqFromQuestion);
+    $("#faqModal").addEventListener("click", (event) => {
+      if (event.target.id === "faqModal") closeFaqModal();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !$("#faqModal").classList.contains("hidden")) {
+        closeFaqModal();
+      }
+    });
+    restoreAdminSession();
+  </script>
+</body>
+</html>

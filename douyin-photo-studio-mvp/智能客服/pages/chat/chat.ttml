@@ -1,0 +1,40 @@
+<view class="page">
+  <view class="chat-card">
+    <view class="chat-header">
+      <view class="chat-avatar">{{service.icon}}</view>
+      <view class="chat-header-copy">
+        <view class="chat-title">{{service.title}}</view>
+        <view class="chat-subtitle">{{service.description}}</view>
+      </view>
+      <button tt:if="{{profileSynced}}" class="profile-button synced" disabled="{{isProfileSaving}}" bindtap="syncDouyinProfile">
+        <image tt:if="{{douyinAvatarUrl}}" class="profile-image" src="{{douyinAvatarUrl}}" mode="aspectFill"></image>
+        <text>{{douyinNickName || '已同步'}}</text>
+      </button>
+      <button tt:else class="profile-button" disabled="{{isProfileSaving}}" bindtap="syncDouyinProfile">
+        <text tt:if="{{isProfileSaving}}">同步中</text>
+        <text tt:else>同步抖音资料</text>
+      </button>
+    </view>
+
+    <scroll-view class="message-list" scroll-y="true" scroll-into-view="{{scrollIntoView}}">
+      <block tt:for="{{messages}}" tt:key="index">
+        <view id="message-{{index}}" class="message {{item.role}} {{item.pending ? 'pending' : ''}}">
+          <view class="bubble">{{item.text}}</view>
+        </view>
+      </block>
+    </scroll-view>
+
+    <view class="quick-list">
+      <block tt:for="{{quickQuestions}}" tt:key="*this">
+        <button class="quick-button" disabled="{{isSending}}" data-question="{{item}}" bindtap="askQuick">{{item}}</button>
+      </block>
+    </view>
+
+    <view class="input-row">
+      <input class="input" value="{{inputValue}}" bindinput="onInput" placeholder="输入你的问题" confirm-type="send" bindconfirm="sendMessage" />
+      <button class="send-button" disabled="{{isSending}}" bindtap="sendMessage">发送</button>
+    </view>
+  </view>
+
+  <button class="lead-button" bindtap="openLead">留下预约意向 <text class="lead-arrow">→</text></button>
+</view>
