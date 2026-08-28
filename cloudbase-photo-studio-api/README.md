@@ -94,6 +94,8 @@ ARK_MODEL=模型接入点 ID
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3/chat/completions
 AI_TIMEOUT_MS=6000
 AI_MAX_TOKENS=240
+# 排查模型返回格式时临时开启；确认问题后建议关闭
+AI_DEBUG_RAW_RESPONSE=false
 ```
 
 HTTP 云函数需要显式配置服务端鉴权。推荐在 CloudBase 的 API Key 管理中创建服务端 API Key，然后在云函数环境变量中配置 `CLOUDBASE_APIKEY`。
@@ -268,11 +270,14 @@ AI_ENABLED=true
 AI_PROVIDER=volcengine
 ARK_API_KEY=你的服务端 API Key
 ARK_MODEL=你的模型接入点 ID
+AI_DEBUG_RAW_RESPONSE=false
 ```
 
 模型密钥只能配置在 CloudBase HTTP 云函数环境变量中，不能放进抖音小程序、静态管理后台或 GitHub。
 
-聊天接口会先恢复 `chat_sessions` 中的会话状态，再根据当前问题和历史对 FAQ、套餐做轻量相关性检索。常见价格、套餐和 FAQ 命中时会优先走本地销售话术快速回复，避免每次都等待模型；复杂咨询、套餐对比、风格建议、个性化推荐或无明确命中时再调用 AI。模型未配置、超时、报错或返回 `NEED_HUMAN` 时，自动回退到同一套销售话术。用户明确提出预约时进入确定性预约工作流：服务端会结合已保存的目的地、日期、同行人数、预算和联系方式继续追问或提交线索，不依赖模型决定是否登记。为适配 CloudBase HTTP 云函数 15 秒上限，AI 请求默认最多等待 6 秒，代码会将环境变量中的上限限制在 7 秒以内。
+聊天接口会先恢复 `chat_sessions` 中的会话状态，再根据当前问题和历史对 FAQ、套餐做轻量相关性检索。业务咨询默认由 AI 组织最终回复，FAQ 和套餐只作为知识上下文；模型未配置、超时、报错或返回格式无法解析时，自动回退到销售话术。用户明确提出预约时进入确定性预约工作流：服务端会结合已保存的目的地、日期、同行人数、预算和联系方式继续追问或提交线索，不依赖模型决定是否登记。为适配 CloudBase HTTP 云函数 15 秒上限，AI 请求默认最多等待 6 秒，代码会将环境变量中的上限限制在 7 秒以内。
+
+当需要排查模型返回格式时，可在 CloudBase 云函数环境变量中临时设置 `AI_DEBUG_RAW_RESPONSE=true`。日志会输出 HTTP 状态、模型、完成原因、提取文本长度和最多 6000 个字符的响应片段；不会输出 API Key。排查完成后应恢复为 `false`，避免日志保存客户对话内容。
 
 请在 CloudBase 数据库中创建 `chat_sessions` 集合。聊天接口会自动创建或更新会话文档，保存最近对话和结构化字段（服务类型、目的地、意向日期、同行人数、预算、联系方式、当前待补字段）。如果不创建该集合，聊天仍可运行，但页面重进后无法从服务端恢复上下文。
 
