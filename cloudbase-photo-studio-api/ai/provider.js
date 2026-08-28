@@ -18,6 +18,9 @@ function getConfig() {
     provider: asString(process.env.AI_PROVIDER) || "volcengine",
     apiKey: asString(process.env.ARK_API_KEY || process.env.AI_API_KEY),
     model: asString(process.env.ARK_MODEL || process.env.AI_MODEL),
+    thinkingType: asString(
+      process.env.AI_THINKING_TYPE || process.env.ARK_THINKING_TYPE
+    ) || "enabled",
     baseUrl: asString(
       process.env.ARK_BASE_URL ||
         process.env.AI_BASE_URL ||
@@ -28,8 +31,8 @@ function getConfig() {
       7000
     ),
     maxTokens: Math.min(
-      Math.max(Number(process.env.AI_MAX_TOKENS) || 200, 120),
-      260
+      Math.max(Number(process.env.AI_MAX_TOKENS) || 512, 240),
+      768
     )
   };
 }
@@ -126,6 +129,21 @@ function extractText(data) {
   }
 
   return "";
+}
+
+function getFinishReason(data) {
+  const choices = data && Array.isArray(data.choices)
+    ? data.choices
+    : data &&
+      data.data &&
+      Array.isArray(data.data.choices)
+      ? data.data.choices
+      : [];
+  const choice = choices[0];
+
+  return asString(
+    choice && (choice.finish_reason || choice.finishReason)
+  );
 }
 
 function parseResponseBody(rawBody) {
@@ -407,24 +425,32 @@ async function generateReply({ message, history, faqs, packages, serviceType }) 
   const startedAt = Date.now();
 
   try {
+    const requestBody = {
+      model: config.model,
+      messages: buildMessages({
+        message,
+        history,
+        faqs,
+        packages,
+        serviceType
+      }),
+      temperature: 0.45,
+      max_tokens: config.maxTokens
+    };
+
+    if (["auto", "enabled", "disabled"].includes(config.thinkingType)) {
+      requestBody.thinking = {
+        type: config.thinkingType
+      };
+    }
+
     const response = await fetch(config.baseUrl, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        model: config.model,
-        messages: buildMessages({
-          message,
-          history,
-          faqs,
-          packages,
-          serviceType
-        }),
-        temperature: 0.45,
-        max_tokens: config.maxTokens
-      }),
+      body: JSON.stringify(requestBody),
       signal: controller.signal
     });
     const rawBody = await response.text().catch(() => "");
@@ -460,6 +486,7 @@ async function generateReply({ message, history, faqs, packages, serviceType }) 
     }
 
     const rawText = extractText(data) || (typeof data === "string" ? data : "");
+    const finishReason = getFinishReason(data);
 
     if (isRawResponseDebugEnabled()) {
       console.log("AI provider raw response", {
@@ -467,13 +494,36 @@ async function generateReply({ message, history, faqs, packages, serviceType }) 
         contentType,
         model: config.model,
         bodyLength: rawBody.length,
-        finishReason: data.choices && data.choices[0]
-          ? data.choices[0].finish_reason || null
-          : null,
+        thinkingType: config.thinkingType,
+        maxTokens: config.maxTokens,
+        finishReason: finishReason || null,
         extractedTextLength: rawText.length,
         extractedText: rawText.slice(0, 3000),
         response: rawResponsePreview
       });
+    }
+
+    if (finishReason === "length") {
+      console.warn("AI provider response was truncated", {
+        status: response.status,
+        contentType,
+        model: config.model,
+        thinkingType: config.thinkingType,
+        maxTokens: config.maxTokens,
+        extractedTextLength: rawText.length,
+        ...(isRawResponseDebugEnabled()
+          ? {
+            extractedText: rawText.slice(0, 3000),
+            response: rawResponsePreview
+          }
+          : {})
+      });
+
+      return {
+        unavailable: true,
+        reason: "AI output truncated by token limit",
+        latencyMs: Date.now() - startedAt
+      };
     }
 
     const result = parseReply(rawText);

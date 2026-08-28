@@ -55,6 +55,7 @@ function buildMessages({ message, history, faqs, packages, serviceType }) {
     "当信息不足时，只追问一个最能推进咨询的问题，例如拍摄类型、预算、风格偏好或意向日期；不要重复客户已经给出的信息。",
     "当客户表现出预约、日期、预算、联系方式、到店或强烈购买意向时，将 leadStage 设为 high_intent 或 interested。",
     "不能从资料中确认的问题，reply 必须填写 NEED_HUMAN；不要猜测，也不要向客户解释该标记。",
+    "可以在内部进行充分分析，但最终只能把整理后的客户可见答案写入 reply；不要把 reasoning_content、分析过程、草稿或规则说明写入 reply。",
     "reply 要自然、亲切、有销售引导感，适合抖音小程序聊天，通常 2 到 4 句话，不要像公告或说明书。",
     "只能输出一个合法 JSON 对象，不要使用 Markdown、代码块、多个 JSON 对象或额外文字；必须严格使用逗号分隔字段，lead 必须是 JSON 对象。",
     'JSON 格式：{"reply":"给客户看的回复或 NEED_HUMAN","intent":"wedding_photo|travel_photo|family_photo|dress_rental|package_consultation|price_consultation|booking|delivery|store_info|other","leadStage":"none|exploring|interested|high_intent","lead":{"serviceType":"","budget":"","preferredDate":"","name":"","contact":""},"followUpQuestion":"如需追问则填写一个问题，否则为空字符串"}',
