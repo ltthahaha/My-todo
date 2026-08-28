@@ -3,6 +3,7 @@ const { getService } = require("../../services/catalog")
 const { studioConfig } = require("../../config/studio")
 
 const networkErrorAnswer = "当前连接有点慢，请稍后重试，或直接填写预约意向让门店顾问联系你。"
+const quickFirstAnswer = "我正在结合门店套餐和你的需求整理回复..."
 const sessionStoragePrefix = "photo_studio_chat_session_"
 const generalService = {
   key: "general",
@@ -186,6 +187,11 @@ Page({
     }
 
     const userMessage = { role: "user", text: question }
+    const pendingMessage = {
+      role: "bot",
+      text: quickFirstAnswer,
+      pending: true
+    }
     const history = this.data.messages
       .slice(-6)
       .map((item) => ({
@@ -193,12 +199,14 @@ Page({
         content: item.text
       }))
 
-    const nextMessages = this.data.messages.concat(userMessage)
+    const nextMessages = this.data.messages.concat(userMessage, pendingMessage)
+    const pendingIndex = nextMessages.length - 1
+
     this.setData({
       messages: nextMessages,
       inputValue: "",
       isSending: true,
-      scrollIntoView: `message-${nextMessages.length - 1}`
+      scrollIntoView: `message-${pendingIndex}`
     })
 
     api.chat({
@@ -222,7 +230,8 @@ Page({
       const reply = response && response.reply
         ? response.reply
         : networkErrorAnswer
-      const messages = this.data.messages.concat({ role: "bot", text: reply })
+      const messages = this.data.messages.slice()
+      messages[pendingIndex] = { role: "bot", text: reply }
 
       this.setData({
         messages,
@@ -231,10 +240,8 @@ Page({
       })
     }).catch((error) => {
       console.error("chat request failed", error)
-      const messages = this.data.messages.concat({
-        role: "bot",
-        text: networkErrorAnswer
-      })
+      const messages = this.data.messages.slice()
+      messages[pendingIndex] = { role: "bot", text: networkErrorAnswer }
 
       this.setData({
         messages,

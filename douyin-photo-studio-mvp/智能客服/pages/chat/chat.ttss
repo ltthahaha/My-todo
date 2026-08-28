@@ -146,10 +146,16 @@
   box-shadow: 0 2px 8px rgba(37, 53, 46, 0.04);
 }
 
+.message.pending .bubble {
+  color: #75847d;
+  background: #eef5f1;
+}
+
 .message.user .bubble {
   border-radius: 15px 15px 5px 15px;
   background: #5e9180;
   color: #fff;
+  max-width: 74%;
 }
 
 .quick-list {

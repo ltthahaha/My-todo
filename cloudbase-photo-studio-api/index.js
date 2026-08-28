@@ -1272,6 +1272,27 @@ function buildContextFallbackReply(sessionState, serviceType) {
   return processReply;
 }
 
+function buildAiUnavailableReply(sessionState, serviceType, fallbackReply) {
+  const state = normalizeSessionState(sessionState);
+  const service = serviceType || state.serviceType || "拍摄";
+  const fallbackText = asString(fallbackReply);
+
+  if (fallbackText && !/^可以的，婚纱照套餐/.test(fallbackText)) {
+    return fallbackText;
+  }
+
+  if (state.budget || state.preferredDate) {
+    const facts = [
+      state.budget && `预算${state.budget}`,
+      state.preferredDate && `意向时间${state.preferredDate}`
+    ].filter(Boolean).join("、");
+
+    return `我先按你说的${facts}帮你整理一下，${service}可以先从风格、拍摄场景和档期三件事确认。你更在意拍摄当天流程，还是想先看适合你预算的套餐？`;
+  }
+
+  return `可以，我先帮你按${service}来梳理。你可以直接告诉我预算、意向日期或喜欢的风格，我会按你的情况给更具体的建议。`;
+}
+
 function mergeExtractedLead(
   aiResult,
   contact,
@@ -3624,11 +3645,9 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       ? "workflow"
       : aiUsed
         ? "ai"
-        : aiAttempted
+      : aiAttempted
           ? "fallback"
-          : baseMatchType === "none"
-            ? "fallback"
-            : baseMatchType;
+          : "fallback";
     const knowledgeMatch = baseMatchType === "none" || baseMatchType === "greeting"
       ? null
       : baseMatchType;
@@ -3661,6 +3680,10 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         leadIntent &&
         hasLeadContact(aiLead)
       );
+    if (!aiUsed && !bookingIntent) {
+      reply = buildAiUnavailableReply(sessionState, serviceContext, fallbackReply);
+    }
+
     const needHuman = baseMatchType === "none" &&
       !planningIntent &&
       !processIntent &&

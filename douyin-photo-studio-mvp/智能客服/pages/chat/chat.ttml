@@ -18,7 +18,7 @@
 
     <scroll-view class="message-list" scroll-y="true" scroll-into-view="{{scrollIntoView}}">
       <block tt:for="{{messages}}" tt:key="index">
-        <view id="message-{{index}}" class="message {{item.role}}">
+        <view id="message-{{index}}" class="message {{item.role}} {{item.pending ? 'pending' : ''}}">
           <view class="bubble">{{item.text}}</view>
         </view>
       </block>
