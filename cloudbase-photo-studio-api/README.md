@@ -87,6 +87,7 @@ FEISHU_BOT_WEBHOOK=你的飞书群机器人 Webhook
 ADMIN_API_TOKEN=线索管理后台访问令牌
 ADMIN_SESSION_SECRET=用于签发后台登录 session 的随机密钥
 ADMIN_SESSION_TTL_SECONDS=604800
+ADMIN_DASHBOARD_URL=https://你的后台域名/index.html
 AI_ENABLED=false
 AI_PROVIDER=volcengine
 ARK_API_KEY=火山方舟服务端 API Key

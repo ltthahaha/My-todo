@@ -1,0 +1,2 @@
+# CloudBase uses this script as the Linux HTTP function entrypoint.
+cloudbase-photo-studio-api/scf_bootstrap text eol=lf

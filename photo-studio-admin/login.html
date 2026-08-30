@@ -232,10 +232,26 @@
     const SESSION_KEY = "photoStudioAdminSession";
 
     const $ = (selector) => document.querySelector(selector);
+    function getPostLoginUrl() {
+      const next = new URLSearchParams(window.location.search).get("next");
+      if (!next) return "index.html";
+
+      try {
+        const target = new URL(next, window.location.href);
+        if (target.origin === window.location.origin && target.pathname.endsWith("/index.html")) {
+          return target.href;
+        }
+      } catch {
+        // Ignore malformed or external redirect targets.
+      }
+
+      return "index.html";
+    }
+
     const storedSession = readStoredSession();
 
     if (storedSession && storedSession.token) {
-      window.location.replace("index.html");
+      window.location.replace(getPostLoginUrl());
     }
 
     function readStoredSession() {
@@ -282,7 +298,7 @@
           expiresAt: Date.now() + Number(data.expiresIn || 0) * 1000
         }));
         setStatus("登录成功，正在进入主界面...", false);
-        window.location.replace("index.html");
+        window.location.replace(getPostLoginUrl());
       } catch (error) {
         setStatus(
           error instanceof TypeError

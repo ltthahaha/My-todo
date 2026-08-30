@@ -1093,6 +1093,14 @@
       }
     }
 
+    function getDeepLinkCustomerKey() {
+      return new URLSearchParams(window.location.search).get("customerKey") || "";
+    }
+
+    function getDeepLinkView() {
+      return new URLSearchParams(window.location.search).get("view") || "";
+    }
+
     adminSession = readStoredAdminSession();
 
     function hasAdminAuth() {
@@ -2303,6 +2311,13 @@
       ]).then(() => {
         dashboardLoadedAt = new Date();
         renderDashboard();
+        const customerKey = getDeepLinkCustomerKey();
+        if (getDeepLinkView() === "customersView" || customerKey) {
+          openView("customersView");
+          if (customerKey) {
+            loadCustomerDetail(customerKey);
+          }
+        }
       }).catch(() => {
         renderDashboard();
       });
@@ -2312,7 +2327,8 @@
       setAuthUi();
 
       if (!adminSession || !adminSession.token) {
-        window.location.replace("login.html");
+        const next = `index.html${window.location.search || ""}`;
+        window.location.replace(`login.html?next=${encodeURIComponent(next)}`);
         return;
       }
 
@@ -2327,7 +2343,8 @@
         loadAllAdminData();
       } catch (error) {
         clearAdminSession();
-        window.location.replace("login.html");
+        const next = `index.html${window.location.search || ""}`;
+        window.location.replace(`login.html?next=${encodeURIComponent(next)}`);
       }
     }
 

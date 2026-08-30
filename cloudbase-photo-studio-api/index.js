@@ -25,6 +25,7 @@ const adminSessionSecret = asString(
     process.env.AUTH_TOKEN_SECRET ||
     process.env.ADMIN_API_TOKEN
 );
+const adminDashboardUrl = asString(process.env.ADMIN_DASHBOARD_URL);
 const adminSessionTtlSeconds = Math.min(
   Math.max(Number(process.env.ADMIN_SESSION_TTL_SECONDS) || 7 * 24 * 60 * 60, 60 * 60),
   30 * 24 * 60 * 60
@@ -698,6 +699,41 @@ function getDatabase() {
 
   cloudbaseDb = appInstance.database();
   return cloudbaseDb;
+}
+
+// Some CloudBase database gateways reject otherwise valid orderBy payloads.
+// Retry those reads without server-side ordering and sort the returned rows locally.
+async function getOrderedRows(db, collectionName, filter, field, direction, limit) {
+  const collection = db.collection(collectionName);
+
+  try {
+    const result = await collection
+      .where(filter)
+      .orderBy(field, direction)
+      .limit(limit)
+      .get();
+    return Array.isArray(result.data) ? result.data : [];
+  } catch (error) {
+    if (!/Invalid order format/i.test(asString(error && error.message))) {
+      throw error;
+    }
+
+    console.warn("CloudBase orderBy rejected; falling back to local sort", {
+      collectionName,
+      field,
+      direction
+    });
+    const result = await collection
+      .where(filter)
+      .limit(limit)
+      .get();
+    const rows = Array.isArray(result.data) ? result.data : [];
+    const multiplier = direction === "asc" ? 1 : -1;
+
+    return rows.sort((left, right) =>
+      multiplier * (toTimestamp(left && left[field]) - toTimestamp(right && right[field]))
+    );
+  }
 }
 
 function normalizeFaq(item) {
@@ -1618,6 +1654,24 @@ async function findAdminRecord(collectionName, recordId, studioId) {
   return Array.isArray(result.data) ? result.data[0] || null : null;
 }
 
+function buildLeadHistoryUrl(lead) {
+  const customerKey = getCustomerKey(lead);
+
+  if (!adminDashboardUrl || !customerKey) {
+    return "";
+  }
+
+  try {
+    const url = new URL(adminDashboardUrl);
+    url.searchParams.set("view", "customers");
+    url.searchParams.set("customerKey", customerKey);
+    return url.toString();
+  } catch (error) {
+    console.error("Invalid ADMIN_DASHBOARD_URL", error);
+    return "";
+  }
+}
+
 function buildLeadText(lead) {
   return [
     "新摄影店预约线索",
@@ -1632,7 +1686,7 @@ function buildLeadText(lead) {
   ].join("\n");
 }
 
-async function notifyFeishu(text) {
+async function notifyFeishu(text, historyUrl = "") {
   const webhook = asString(process.env.FEISHU_BOT_WEBHOOK);
 
   if (!webhook) {
@@ -1642,16 +1696,46 @@ async function notifyFeishu(text) {
     };
   }
 
+  const payload = historyUrl
+    ? {
+      msg_type: "interactive",
+      card: {
+        config: { wide_screen_mode: true },
+        header: {
+          title: { tag: "plain_text", content: "新摄影店预约线索" },
+          template: "blue"
+        },
+        elements: [
+          {
+            tag: "div",
+            text: { tag: "plain_text", content: text }
+          },
+          {
+            tag: "action",
+            actions: [
+              {
+                tag: "button",
+                text: { tag: "plain_text", content: "查看历史聊天" },
+                type: "primary",
+                url: historyUrl
+              }
+            ]
+          }
+        ]
+      }
+    }
+    : {
+      msg_type: "text",
+      content: { text }
+    };
+
   const response = await fetch(webhook, {
     method: "POST",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      msg_type: "text",
-      content: { text }
-    })
+    body: JSON.stringify(payload)
   });
 
   const data = await response.json().catch(() => ({}));
@@ -2255,16 +2339,19 @@ app.get("/api/photo-studio/admin/leads", requireAdmin, async (req, res) => {
       filter.status = status;
     }
 
-    const result = await db.collection(leadCollection)
-      .where(filter)
-      .orderBy("createdAt", "desc")
-      .limit(limit)
-      .get();
+    const rows = await getOrderedRows(
+      db,
+      leadCollection,
+      filter,
+      "createdAt",
+      "desc",
+      limit
+    );
 
     res.json({
       ok: true,
       studioId,
-      leads: Array.isArray(result.data) ? result.data : []
+      leads: rows
     });
   } catch (error) {
     console.error("Admin lead list failed", error);
@@ -2745,28 +2832,16 @@ app.get("/api/photo-studio/admin/customers", requireAdmin, async (req, res) => {
   }
 
   try {
-    const [sessionResult, messageResult, leadResult] = await Promise.all([
-      db.collection(chatSessionCollection)
-        .where({ studioId })
-        .orderBy("updatedAt", "desc")
-        .limit(limit)
-        .get(),
-      db.collection(chatCollection)
-        .where({ studioId })
-        .orderBy("createdAt", "desc")
-        .limit(limit * 3)
-        .get(),
-      db.collection(leadCollection)
-        .where({ studioId })
-        .orderBy("createdAt", "desc")
-        .limit(limit * 2)
-        .get()
+    const [sessions, messages, leads] = await Promise.all([
+      getOrderedRows(db, chatSessionCollection, { studioId }, "updatedAt", "desc", limit),
+      getOrderedRows(db, chatCollection, { studioId }, "createdAt", "desc", limit * 3),
+      getOrderedRows(db, leadCollection, { studioId }, "createdAt", "desc", limit * 2)
     ]);
     const douyinUsers = await getDouyinUsers(studioId);
     const customers = enrichCustomersWithDouyinUsers(buildCustomerList({
-      sessions: Array.isArray(sessionResult.data) ? sessionResult.data : [],
-      messages: Array.isArray(messageResult.data) ? messageResult.data : [],
-      leads: Array.isArray(leadResult.data) ? leadResult.data : [],
+      sessions,
+      messages,
+      leads,
       users: douyinUsers
     }), douyinUsers).slice(0, limit);
     const customerStates = await getCustomerStates(studioId);
@@ -2814,26 +2889,11 @@ app.get("/api/photo-studio/admin/customers/:customerKey", requireAdmin, async (r
 
   try {
     const filter = buildCustomerFilter(studioId, customerKey);
-    const [sessionResult, messageResult, leadResult] = await Promise.all([
-      db.collection(chatSessionCollection)
-        .where(filter)
-        .orderBy("updatedAt", "desc")
-        .limit(20)
-        .get(),
-      db.collection(chatCollection)
-        .where(filter)
-        .orderBy("createdAt", "asc")
-        .limit(200)
-        .get(),
-      db.collection(leadCollection)
-        .where(filter)
-        .orderBy("createdAt", "desc")
-        .limit(50)
-        .get()
+    const [sessions, messages, leads] = await Promise.all([
+      getOrderedRows(db, chatSessionCollection, filter, "updatedAt", "desc", 20),
+      getOrderedRows(db, chatCollection, filter, "createdAt", "asc", 200),
+      getOrderedRows(db, leadCollection, filter, "createdAt", "desc", 50)
     ]);
-    const sessions = Array.isArray(sessionResult.data) ? sessionResult.data : [];
-    const messages = Array.isArray(messageResult.data) ? messageResult.data : [];
-    const leads = Array.isArray(leadResult.data) ? leadResult.data : [];
     const douyinUser = customerKey.startsWith("douyin_")
       ? await getDouyinUser(studioId, customerKey)
       : null;
@@ -3060,16 +3120,19 @@ app.get("/api/photo-studio/admin/unanswered", requireAdmin, async (req, res) => 
       filter.status = status;
     }
 
-    const result = await db.collection(unansweredCollection)
-      .where(filter)
-      .orderBy("lastAskedAt", "desc")
-      .limit(limit)
-      .get();
+    const questions = await getOrderedRows(
+      db,
+      unansweredCollection,
+      filter,
+      "lastAskedAt",
+      "desc",
+      limit
+    );
 
     res.json({
       ok: true,
       studioId,
-      questions: Array.isArray(result.data) ? result.data : []
+      questions
     });
   } catch (error) {
     console.error("Admin unanswered list failed", error);
@@ -3725,7 +3788,10 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     if (leadCapture.stored && !leadCapture.deduplicated) {
       try {
         notification = await withTimeout(
-          () => notifyFeishu(buildLeadText(leadCapture.lead)),
+          () => notifyFeishu(
+            buildLeadText(leadCapture.lead),
+            buildLeadHistoryUrl(leadCapture.lead)
+          ),
           chatOperationTimeouts.feishuNotification,
           {
             sent: false,
@@ -3972,6 +4038,7 @@ app.post("/api/photo-studio/leads", async (req, res) => {
     isAuthenticated: false,
     douyinNickName: "",
     douyinAvatarUrl: "",
+    sessionId: asString(req.body.sessionId),
     name: asString(req.body.name),
     contact: asString(req.body.contact),
     serviceType: asString(req.body.serviceType),
@@ -4014,7 +4081,10 @@ app.post("/api/photo-studio/leads", async (req, res) => {
     let notification;
 
     try {
-      notification = await notifyFeishu(buildLeadText(lead));
+      notification = await notifyFeishu(
+        buildLeadText(lead),
+        buildLeadHistoryUrl(lead)
+      );
     } catch (error) {
       console.error("Feishu lead notification failed", error);
       notification = {

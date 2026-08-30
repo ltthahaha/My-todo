@@ -3,6 +3,7 @@ const { studioConfig } = require("../../config/studio")
 
 Page({
   data: {
+    sessionId: "",
     name: "",
     contact: "",
     serviceType: "婚纱照",
@@ -26,6 +27,7 @@ Page({
       : 0
 
     this.setData({
+      sessionId: options.sessionId ? decodeURIComponent(options.sessionId) : "",
       serviceIndex: index,
       serviceType: this.data.serviceOptions[index]
     })
@@ -64,6 +66,7 @@ Page({
     const payload = {
       studioId: studioConfig.studioId,
       douyinAppId: studioConfig.douyinAppId,
+      sessionId: this.data.sessionId,
       name: this.data.name,
       contact: this.data.contact,
       serviceType: this.data.serviceType,

@@ -53,6 +53,8 @@ const STUDIO_ID = "demo-studio";
 
 登录 session 只保存在当前浏览器标签页的 `sessionStorage` 中，不会写入项目文件。
 
+后台支持线索通知中的客户深链接：`index.html?view=customers&customerKey=...`。未登录时会先进入登录页，登录成功后自动打开对应客户的聊天记录。
+
 客户如果在小程序客服页授权“同步抖音资料”，后台会在客户列表、客户详情和线索列表中显示抖音昵称与头像。资料来自 `douyin_users` 集合，并会随聊天记录、预约线索保存为 `douyinNickName`、`douyinAvatarUrl` 字段；用户未授权时仍按匿名客户显示。
 
 如果 PowerShell 请求成功但浏览器提示无法访问接口，请先执行强制刷新（`Ctrl + F5`），再打开浏览器开发者工具查看 Network 中的接口请求。CloudBase HTTP 网关跨域需要允许请求头 `Authorization, Content-Type, X-Admin-Token`。

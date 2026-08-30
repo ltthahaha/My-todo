@@ -252,11 +252,15 @@ Page({
   },
 
   openLead: function () {
-    const typeQuery = this.data.serviceKey === "general"
-      ? ""
-      : `?type=${this.data.serviceKey}`
+    const query = []
+    if (this.data.serviceKey !== "general") {
+      query.push(`type=${encodeURIComponent(this.data.serviceKey)}`)
+    }
+    if (this.data.sessionId) {
+      query.push(`sessionId=${encodeURIComponent(this.data.sessionId)}`)
+    }
     tt.navigateTo({
-      url: `/pages/lead/lead${typeQuery}`
+      url: `/pages/lead/lead${query.length ? `?${query.join("&")}` : ""}`
     })
   }
 })
