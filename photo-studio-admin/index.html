@@ -1101,6 +1101,11 @@
       return new URLSearchParams(window.location.search).get("view") || "";
     }
 
+    function hasCustomerDeepLink() {
+      const view = getDeepLinkView();
+      return view === "customers" || view === "customersView" || Boolean(getDeepLinkCustomerKey());
+    }
+
     adminSession = readStoredAdminSession();
 
     function hasAdminAuth() {
@@ -2302,6 +2307,9 @@
 
     function loadAllAdminData() {
       dashboardLoadedAt = new Date();
+      if (hasCustomerDeepLink()) {
+        openView("customersView");
+      }
       renderDashboard();
       Promise.all([
         loadCustomers(),
@@ -2312,10 +2320,10 @@
         dashboardLoadedAt = new Date();
         renderDashboard();
         const customerKey = getDeepLinkCustomerKey();
-        if (getDeepLinkView() === "customersView" || customerKey) {
+        if (hasCustomerDeepLink()) {
           openView("customersView");
           if (customerKey) {
-            loadCustomerDetail(customerKey);
+            loadCustomerDetail(customerKey, { keepList: true });
           }
         }
       }).catch(() => {
