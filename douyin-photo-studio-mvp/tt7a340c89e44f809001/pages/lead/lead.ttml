@@ -1,0 +1,48 @@
+<view class="page">
+  <view tt:if="{{!submitted}}">
+    <view class="intro">
+      <view class="title">留下预约意向</view>
+      <view class="description">门店顾问会根据你的需求、预算和日期联系你。</view>
+    </view>
+
+    <view class="form-card">
+      <view class="field">
+        <view class="label">姓名</view>
+        <input class="input" data-field="name" value="{{name}}" bindinput="onInput" placeholder="例如：李小姐" />
+      </view>
+      <view class="field">
+        <view class="label">手机号 / 微信</view>
+        <input class="input" data-field="contact" value="{{contact}}" bindinput="onInput" placeholder="方便门店联系" />
+      </view>
+      <view class="field">
+        <view class="label">拍摄类型</view>
+        <picker mode="selector" range="{{serviceOptions}}" value="{{serviceIndex}}" bindchange="chooseService">
+          <view class="picker">{{serviceType}} <text class="picker-arrow">⌄</text></view>
+        </picker>
+      </view>
+      <view class="field">
+        <view class="label">意向日期</view>
+        <picker mode="date" value="{{preferredDate}}" bindchange="chooseDate">
+          <view class="picker">{{preferredDate || "请选择日期"}} <text class="picker-arrow">⌄</text></view>
+        </picker>
+      </view>
+      <view class="field">
+        <view class="label">预算</view>
+        <input class="input" data-field="budget" value="{{budget}}" bindinput="onInput" placeholder="例如：5000 元左右" />
+      </view>
+      <view class="field">
+        <view class="label">补充需求</view>
+        <textarea class="textarea" data-field="note" value="{{note}}" bindinput="onInput" placeholder="喜欢的风格、人数、拍摄地点等"></textarea>
+      </view>
+      <button class="primary-button" bindtap="submitLead">提交预约意向</button>
+      <view class="privacy-note">提交后仅用于联系你确认拍摄需求。</view>
+    </view>
+  </view>
+
+  <view tt:else class="success-card">
+    <view class="success-icon">✓</view>
+    <view class="success-title">已收到你的预约意向</view>
+    <view class="success-text">门店顾问会尽快联系你确认套餐和档期。</view>
+    <button class="primary-button" bindtap="goBack">返回咨询</button>
+  </view>
+</view>

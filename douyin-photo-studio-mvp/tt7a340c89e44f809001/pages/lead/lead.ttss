@@ -1,0 +1,116 @@
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 20px 18px 40px;
+  background: #f6f7f6;
+}
+
+.intro {
+  margin-bottom: 18px;
+}
+
+.title {
+  color: #26352f;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.description {
+  margin-top: 8px;
+  color: #74817b;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.form-card,
+.success-card {
+  padding: 18px;
+  border: 1px solid #e4ebe7;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 6px 20px rgba(37, 53, 46, 0.04);
+}
+
+.field {
+  margin-bottom: 16px;
+}
+
+.label {
+  margin-bottom: 7px;
+  color: #52615a;
+  font-size: 13px;
+}
+
+.input,
+.picker,
+.textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #dfe8e3;
+  border-radius: 10px;
+  background: #fff;
+  color: #3a4741;
+  font-size: 14px;
+  line-height: 42px;
+}
+
+.textarea {
+  height: 80px;
+  padding-top: 10px;
+  line-height: 1.5;
+}
+
+.picker {
+  box-sizing: border-box;
+}
+
+.picker-arrow {
+  float: right;
+  color: #9da9a3;
+}
+
+.primary-button {
+  margin: 0;
+  background: #5e9180;
+  color: #fff;
+}
+
+.privacy-note {
+  margin-top: 10px;
+  color: #8995a3;
+  font-size: 11px;
+  text-align: center;
+}
+
+.success-card {
+  margin-top: 80px;
+  text-align: center;
+}
+
+.success-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #e5f3eb;
+  color: #4f936f;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.success-title {
+  margin-top: 16px;
+  color: #26312d;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.success-text {
+  margin: 8px 0 20px;
+  color: #74817b;
+  font-size: 14px;
+  line-height: 1.6;
+}
