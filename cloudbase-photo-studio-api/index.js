@@ -40,7 +40,7 @@ const chatOperationTimeouts = {
   chatSessionRead: 700,
   chatSessionWrite: 900,
   leadCapture: 1800,
-  feishuNotification: 1000,
+  leadNotification: 1500,
   chatLog: 1000,
   unanswered: 800
 };
@@ -1692,6 +1692,7 @@ async function notifyFeishu(text, historyUrl = "") {
   if (!webhook) {
     return {
       sent: false,
+      configured: false,
       reason: "FEISHU_BOT_WEBHOOK is not configured"
     };
   }
@@ -1744,7 +1745,99 @@ async function notifyFeishu(text, historyUrl = "") {
     throw new Error(data.msg || "Feishu notification failed");
   }
 
-  return { sent: true };
+  return { sent: true, configured: true };
+}
+
+async function notifyDingtalk(text, historyUrl = "") {
+  const webhook = asString(process.env.DINGTALK_BOT_WEBHOOK);
+
+  if (!webhook) {
+    return {
+      sent: false,
+      configured: false,
+      reason: "DINGTALK_BOT_WEBHOOK is not configured"
+    };
+  }
+
+  const payloadText = historyUrl
+    ? `${text}\n\n[查看历史聊天](${historyUrl})`
+    : text;
+  const payload = {
+    msgtype: "markdown",
+    markdown: {
+      title: "新摄影店预约线索",
+      text: payloadText
+    }
+  };
+
+  const response = await fetch(webhook, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json().catch(() => ({}));
+  const errcode = Number(data.errcode);
+
+  if (!response.ok || (Number.isFinite(errcode) && errcode !== 0)) {
+    throw new Error(data.errmsg || "Dingtalk notification failed");
+  }
+
+  return { sent: true, configured: true };
+}
+
+async function notifyLeadChannels(text, historyUrl = "") {
+  const channels = [
+    {
+      name: "feishu",
+      configured: Boolean(asString(process.env.FEISHU_BOT_WEBHOOK)),
+      task: () => notifyFeishu(text, historyUrl)
+    },
+    {
+      name: "dingtalk",
+      configured: Boolean(asString(process.env.DINGTALK_BOT_WEBHOOK)),
+      task: () => notifyDingtalk(text, historyUrl)
+    }
+  ];
+  const results = {};
+
+  await Promise.all(channels.map(async (channel) => {
+    try {
+      results[channel.name] = await channel.task();
+    } catch (error) {
+      results[channel.name] = {
+        sent: false,
+        configured: channel.configured,
+        reason: error.message || `${channel.name} notification failed`
+      };
+    }
+  }));
+
+  const configuredChannels = channels
+    .filter((channel) => channel.configured)
+    .map((channel) => channel.name);
+  const sentChannels = configuredChannels
+    .filter((name) => results[name] && results[name].sent);
+  const failedChannels = configuredChannels
+    .filter((name) => !results[name] || !results[name].sent);
+
+  return {
+    sent: configuredChannels.length > 0 && failedChannels.length === 0,
+    partial: sentChannels.length > 0 && failedChannels.length > 0,
+    configured: configuredChannels.length > 0,
+    configuredChannels,
+    sentChannels,
+    failedChannels,
+    channels: results,
+    reason: configuredChannels.length === 0
+      ? "No lead notification channel is configured"
+      : (failedChannels.length > 0
+        ? `Notification failed: ${failedChannels.join(", ")}`
+        : "")
+  };
 }
 
 async function saveLead(lead) {
@@ -3788,21 +3881,21 @@ app.post("/api/photo-studio/chat", async (req, res) => {
     if (leadCapture.stored && !leadCapture.deduplicated) {
       try {
         notification = await withTimeout(
-          () => notifyFeishu(
+          () => notifyLeadChannels(
             buildLeadText(leadCapture.lead),
             buildLeadHistoryUrl(leadCapture.lead)
           ),
-          chatOperationTimeouts.feishuNotification,
+          chatOperationTimeouts.leadNotification,
           {
             sent: false,
-            reason: "Feishu notification timed out"
+            reason: "Lead notification timed out"
           }
         );
       } catch (error) {
-        console.error("AI lead Feishu notification failed", error);
+        console.error("AI lead notification failed", error);
         notification = {
           sent: false,
-          reason: error.message || "Feishu notification failed"
+          reason: error.message || "Lead notification failed"
         };
       }
     }
@@ -4081,15 +4174,15 @@ app.post("/api/photo-studio/leads", async (req, res) => {
     let notification;
 
     try {
-      notification = await notifyFeishu(
+      notification = await notifyLeadChannels(
         buildLeadText(lead),
         buildLeadHistoryUrl(lead)
       );
     } catch (error) {
-      console.error("Feishu lead notification failed", error);
+      console.error("Lead notification failed", error);
       notification = {
         sent: false,
-        reason: error.message || "Feishu notification failed"
+        reason: error.message || "Lead notification failed"
       };
     }
 

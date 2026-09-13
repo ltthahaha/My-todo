@@ -10,8 +10,8 @@ config/studio.js
 
 ```js
 const studioConfig = {
-  studioId: "demo-studio",
-  studioName: "映白摄影",
+  studioId: "xian-west-photo",
+  studioName: "西区摄影",
   douyinAppId: "tt7a340c89e44f809001",
   apiBaseUrl: "https://你的 CloudBase HTTP 网关域名"
 }
@@ -31,7 +31,7 @@ POST /api/photo-studio/leads
 ```
 
 `/api/photo-studio/chat` 会读取当前 `studioId` 下的 FAQ、套餐、聊天上下文，并按配置调用 AI。
-`/api/photo-studio/leads` 会校验线索，保存到 CloudBase，并在配置 `FEISHU_BOT_WEBHOOK` 后推送到飞书群机器人。
+`/api/photo-studio/leads` 会校验线索，保存到 CloudBase，并按服务端配置的 `FEISHU_BOT_WEBHOOK`、`DINGTALK_BOT_WEBHOOK` 并行推送到飞书群和/或钉钉群机器人。
 
 客服页的“同步抖音资料”按钮会在用户点击后调用 `tt.getUserProfile()`。授权成功后，小程序会把昵称和头像提交到 `/api/photo-studio/auth/profile`，后台客户工作台和线索管理会显示 `douyinNickName`、`douyinAvatarUrl`。用户取消授权时，咨询和预约流程继续按匿名客户处理。
 
@@ -39,7 +39,7 @@ POST /api/photo-studio/leads
 
 ```json
 {
-  "studioId": "demo-studio",
+  "studioId": "xian-west-photo",
   "douyinAppId": "tt7a340c89e44f809001",
   "sessionId": "session-001",
   "message": "婚纱照多少钱？"
@@ -61,7 +61,7 @@ POST /api/photo-studio/leads
 
 ```json
 {
-  "studioId": "demo-studio",
+  "studioId": "xian-west-photo",
   "douyinAppId": "tt7a340c89e44f809001",
   "name": "李小姐",
   "contact": "13800000000",
@@ -73,4 +73,4 @@ POST /api/photo-studio/leads
 }
 ```
 
-不要把大模型 API Key、抖音 AppSecret、飞书 App Secret 或群机器人 Webhook 写入小程序前端。
+不要把大模型 API Key、抖音 AppSecret、飞书 App Secret、飞书/钉钉群机器人 Webhook 写入小程序前端。

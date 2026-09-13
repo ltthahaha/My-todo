@@ -84,6 +84,7 @@ DOUYIN_APP_SECRET=抖音小程序 AppSecret
 DOUYIN_APP_SECRETS={"tt428a3437dcf0288901":"抖音小程序 AppSecret"}
 DOUYIN_AUTH_TOKEN_SECRET=用于签发小程序用户 token 的随机密钥
 FEISHU_BOT_WEBHOOK=你的飞书群机器人 Webhook
+DINGTALK_BOT_WEBHOOK=你的钉钉群机器人 Webhook
 ADMIN_API_TOKEN=线索管理后台访问令牌
 ADMIN_SESSION_SECRET=用于签发后台登录 session 的随机密钥
 ADMIN_SESSION_TTL_SECONDS=604800
@@ -353,7 +354,16 @@ AI_DEBUG_RAW_RESPONSE=false
 
 聊天记录会增加 `aiEnabled`、`aiUsed`、`aiFallback`、`aiProvider`、`aiLatencyMs`、`aiIntent`、`aiLeadStage`、`aiLead`、`aiFollowUpQuestion`、`aiLeadCaptureEligible`、`aiLeadStored`、`aiLeadDeduplicated`、`aiLeadId`、`aiLeadNotificationSent` 和 `knowledgeContext` 字段。运营统计接口会返回 `aiAnsweredChats`、`aiFallbackChats` 和 `highIntentChats`。
 
-当 AI 判断客户为 `high_intent` 且提取到联系方式时，聊天接口会自动创建一条 `leads` 记录，来源为 `douyin-miniapp-ai`，并发送飞书通知。相同 `studioId + sessionId + source` 的后续消息不会重复创建线索。只有数据库保存成功后，客服才会回复“已记录预约意向”；如果没有联系方式或保存失败，不会虚假承诺已经登记。
+当 AI 判断客户为 `high_intent` 且提取到联系方式时，聊天接口会自动创建一条 `leads` 记录，来源为 `douyin-miniapp-ai`，并按已配置的通道并行发送飞书和/或钉钉通知。相同 `studioId + sessionId + source` 的后续消息不会重复创建线索。只有数据库保存成功后，客服才会回复“已记录预约意向”；如果没有联系方式或保存失败，不会虚假承诺已经登记。两种群机器人都会带上客户信息和历史聊天链接；一侧发送失败时，响应中的 `notification.partial` 和 `notification.failedChannels` 会标明具体通道。
+
+线索通知环境变量可只配置一个，也可以同时配置：
+
+```text
+FEISHU_BOT_WEBHOOK=飞书群机器人 Webhook
+DINGTALK_BOT_WEBHOOK=钉钉群机器人 Webhook
+```
+
+Webhook 仅放在 CloudBase 服务端环境变量中。钉钉机器人安全设置中的关键词应包含“新摄影店预约线索”，否则机器人可能拒收消息。
 
 聊天响应中的 `leadCapture` 字段示例：
 
@@ -364,7 +374,11 @@ AI_DEBUG_RAW_RESPONSE=false
   "deduplicated": false,
   "id": "lead-document-id",
   "notification": {
-    "sent": true
+    "sent": true,
+    "partial": false,
+    "configuredChannels": ["feishu", "dingtalk"],
+    "sentChannels": ["feishu", "dingtalk"],
+    "failedChannels": []
   }
 }
 ```
@@ -476,6 +490,8 @@ leads
 chat_messages
 unanswered_questions
 ```
+
+西区摄影真实门店的首批导入数据已放在 `data/seed/xian-west-photo/`。CloudBase 控制台请在集合列表点击“导入”（不是“添加文档”），选择“JSON”格式，并上传 `studios-cloudbase-import.json`、`packages-cloudbase-import.json`、`faqs-cloudbase-import.json`；这些文件的内容是 JSON Lines（每行一个对象），并带有稳定 `_id`。导入后请用 `studioId = xian-west-photo` 检查数据隔离；该目录不包含任何密钥。
 
 FAQ 和套餐数据可以先使用项目中的 `data/faq.json`、`data/packages.json` 作为回退数据。正式使用时，在每条 FAQ 和套餐记录中添加：
 
