@@ -76,7 +76,13 @@ ARK_MODEL=模型接入点ID
 
 ## 4. 微信后台合法域名
 
-在微信公众平台的小程序开发设置中，将 CloudBase HTTPS 域名加入 `request 合法域名`。只填写 HTTPS 域名，不填写协议、接口路径、端口或末尾斜杠。
+在微信公众平台的小程序开发设置中，将 CloudBase HTTPS 服务地址加入 `request 合法域名`。若输入框已提供 `https://` 前缀，只填主机名；若要求完整地址，则包含 `https://`。不要附加 `/api` 等接口路径、端口或末尾斜杠。保存后在微信开发者工具刷新项目配置并重新编译。
+
+当前服务地址为：
+
+```text
+https://photo-studio-prod-d2drpjd43ee075-1384636564.ap-shanghai.app.tcloudbase.com
+```
 
 ## 5. 需要的集合
 
@@ -102,3 +108,14 @@ wechat_users
 5. 提交联系方式，确认 `leads`、`chat_messages`、`chat_sessions` 有记录。
 6. 确认飞书群收到线索通知。
 7. 在管理后台客户工作台确认聊天记录和预约情况。
+
+## 7. 微信登录排查
+
+`/health` 的 `wechatAuth.configured` 和 `tokenConfigured` 为 `true` 仅表示读取到了配置，不保证凭据有效、门店绑定正确或数据库集合可读写。页面提示无法连接时，在开发者工具 Network 中查看 `wechat-login` 请求的状态码和 Response：
+
+- `WeChat token signing is not configured`：实际处理请求的云函数未读取到 `WECHAT_AUTH_TOKEN_SECRET`。
+- `WeChat app credentials are not configured`：当前 AppID 没有对应的 AppSecret。代码优先读取 `WECHAT_APP_SECRETS` 中匹配的值，再尝试单 App 配置。
+- `WeChat AppID binding is required` / `WeChat AppID does not match studio`：核对线上 `studios` 中 `xian-west-photo` 记录的 `wechatAppId`，本地种子文件不等于线上已更新。
+- 登录成功但聊天仍失败：继续查看 `/api/photo-studio/chat` 的 Response 与云函数日志。
+
+环境变量更新后，重新部署或重启实际承载接口的服务，确认新配置生效。排查时不要分享 AppSecret、临时登录 code、用户 Token 或含客户个人信息的完整响应。

@@ -1,6 +1,6 @@
 # 项目会话交接记录
 
-更新时间：2026-08-27  
+更新时间：2026-08-28  
 工作区：`E:\Project_Codex\my-todo-app`
 
 ## 1. Git 仓库状态
@@ -16,7 +16,7 @@ GitHub 仓库：
 最新提交：
 
 ```text
-c86ae13 Split admin login and dashboard pages
+7a6cddf Return final AI answers without reasoning leakage
 ```
 
 当前工作区已提交，后续换设备后执行：
@@ -60,7 +60,7 @@ CloudBase 数据库 + AI + 飞书群通知
 
 - `/health` 健康检查
 - 抖音用户登录和身份识别
-- AI 客服和本地知识库回复
+- AI 主答客服和本地知识库兜底
 - FAQ、套餐匹配
 - 聊天上下文保存
 - 预约意向和线索保存
@@ -174,7 +174,9 @@ customer_states
 
 小程序客服页支持用户主动授权同步抖音资料。授权成功后，后端 `POST /api/photo-studio/auth/profile` 会把 `douyinNickName`、`douyinAvatarUrl`、`profileUpdatedAt` 写入 `douyin_users`，并在后续聊天、会话和线索记录中带上昵称头像快照。后台客户工作台和线索管理会优先展示真实姓名，其次展示抖音昵称；未授权用户继续按匿名客户处理。
 
-AI 客服回复策略已调整为“快答优先”：常见价格、套餐和 FAQ 命中时直接使用本地销售话术返回，复杂咨询、套餐对比、风格建议、个性化推荐或无明确命中时再调用 AI。聊天响应和日志会记录 `salesStage`，用于区分探索、比较、高意向和预约阶段。
+AI 客服回复策略已从“本地快答优先”调整为“AI 主答 + FAQ/套餐作为知识底座 + 本地动作强规则”。普通业务咨询默认调用 AI 组织最终回复，FAQ 和套餐只作为检索材料；问候语、预约提交、线索入库、飞书通知、用户身份校验仍由确定性后端逻辑处理。小程序聊天页已增加快速首响气泡，用户发送消息后会先显示“正在整理回复”，接口返回后再替换为最终答案。
+
+2026-08-28 实测发现：模型 `deepseek-v4-flash-260425` 会返回 `reasoning_content`，并且在 `AI_MAX_TOKENS` 过低时出现 `finish_reason: length`，导致最终 `message.content` 为空或只剩“您问”这类半截回复。后端已改为只读取最终 `message.content`，不返回 `reasoning_content`；同时新增 `AI_THINKING_TYPE`、提高 `AI_MAX_TOKENS` 默认值，并在 `finish_reason=length` 时拒绝半截答案，改走本地兜底。
 
 ### studios 示例记录
 
@@ -224,6 +226,8 @@ ARK_MODEL
 ARK_BASE_URL
 AI_TIMEOUT_MS
 AI_MAX_TOKENS
+AI_THINKING_TYPE
+AI_DEBUG_RAW_RESPONSE
 ```
 
 单店可以使用：
@@ -273,6 +277,10 @@ DOUYIN_APP_SECRETS={"小程序AppID1":"AppSecret1","小程序AppID2":"AppSecret2
 - 后台按门店账号读取数据
 - 多店配置代码通过 Node.js 语法检查
 - 后台 `index.html` 和 `login.html` 通过 JavaScript 语法检查
+- AI 原始响应日志可通过 `AI_DEBUG_RAW_RESPONSE=true` 临时开启
+- AI 解析器已兼容标准 JSON、普通文本、顶层 `answer/reply/text/content`、嵌套输出、SSE 和截断 JSON
+- `finish_reason=length` 的半截回复会被拦截，不再直接返回给小程序
+- 小程序聊天页已支持快速首响并替换最终回复
 
 ## 8. 当前最近完成的改动
 
@@ -303,6 +311,30 @@ DOUYIN_APP_SECRETS={"小程序AppID1":"AppSecret1","小程序AppID2":"AppSecret2
 - 未登录自动跳转登录页
 - 登录成功自动跳转主界面
 - 登录页增加摄影主题视觉设计
+
+### AI 主答与响应排查
+
+近期提交：
+
+```text
+6035379 Improve photo studio chat context logic
+29537c1 Make photo studio AI the default responder
+c00e43e Add fast first response for photo studio chat
+310b0d0 Log and parse AI provider responses
+7a6cddf Return final AI answers without reasoning leakage
+```
+
+内容：
+
+- 按服务类型收窄 FAQ 和套餐，避免婚纱照咨询混入旅拍、亲子、租赁套餐。
+- 普通业务咨询默认调用 AI，FAQ/套餐仅作为知识上下文。
+- 小程序前端增加“正在整理回复”的快速首响气泡。
+- `provider.js` 先读取 AI 原始响应文本，再尝试解析 JSON，方便定位供应商格式差异。
+- 新增 `AI_DEBUG_RAW_RESPONSE`，调试时可在 CloudBase 日志查看 `AI provider raw response`。
+- 新增 `AI_THINKING_TYPE`，支持 `enabled`、`auto`、`disabled`。
+- `AI_MAX_TOKENS` 默认提高到 `512`，代码允许最高 `768`。
+- 服务端只读取 `message.content` 作为客户可见答案，不返回 `reasoning_content`。
+- 当 `finish_reason=length` 时，后端判定 AI 输出被截断，不会把“您问”等半截内容返回给客户。
 
 ## 9. 换设备后的第一步
 
@@ -337,6 +369,24 @@ git pull origin photo-studio-ai-mvp
 4. 增加角色权限和审计日志。
 5. 增加真实档期查询和人工接管。
 6. 为每家店生成独立小程序配置包。
+
+### 继续优化 AI 客服
+
+当前最新实测结论：
+
+1. AI 调用已成功参与大部分业务咨询，正常响应延迟约 3.9-5 秒。
+2. 偶发请求会达到 7 秒超时并回退到本地话术。
+3. `salesStage` 仍可能从 `comparing` 回落到 `greeting`，需要改成更保守的阶段继承策略。
+4. “当天怎么安排”等问题需要在 CloudBase FAQ 中补充真实门店流程，否则 AI 会受“不能编造资料外内容”约束，回答质量不稳定。
+5. 调试完成后应关闭 `AI_DEBUG_RAW_RESPONSE=false`，避免日志长期保存客户对话和模型内部思考内容。
+
+建议下一步：
+
+1. 优先将 `AI_THINKING_TYPE` 从 `enabled` 实测切到 `auto`，如果仍慢再试 `disabled`。
+2. 保留 `AI_MAX_TOKENS=512`。
+3. 修复 `salesStage` 阶段继承，避免高意向客户被降级为问候阶段。
+4. 在 `faqs` 集合新增婚纱照拍摄当天流程、前期准备、选片精修周期等真实 FAQ。
+5. 继续观察 CloudBase 日志中的 `fallbackReason`，若仍出现 `AI request timed out`，再压缩 prompt 和历史轮数。
 
 ## 10. 安全提醒
 
