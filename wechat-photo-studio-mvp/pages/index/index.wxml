@@ -1,0 +1,48 @@
+<view class="page">
+  <view class="hero">
+    <view class="hero-topline">
+      <view class="eyebrow">{{studioName}}</view>
+      <view class="hero-status"><view class="status-dot"></view>在线咨询</view>
+    </view>
+    <view class="title"><view>记录喜欢的样子，</view><view>先从了解开始</view></view>
+    <view class="subtitle">看看拍摄风格和套餐参考，也可以直接咨询门店顾问。</view>
+    <button class="primary-button" bindtap="goChat">在线咨询 <text class="button-arrow">→</text></button>
+  </view>
+
+  <view class="section-title">
+    <view>
+      <view class="section-heading">了解摄影服务</view>
+      <view class="section-subtitle">查看作品方向、套餐参考和拍摄信息</view>
+    </view>
+    <view class="section-note">{{serviceCount}} 项服务</view>
+  </view>
+
+  <view class="service-list">
+    <block wx:for="{{services}}" wx:key="key">
+      <view class="service-card {{item.accent}}" data-service="{{item.key}}" bindtap="goService">
+        <view class="service-card-top">
+          <view class="service-icon">{{item.icon}}</view>
+          <view class="service-tag">{{item.tag}}</view>
+          <view class="arrow">→</view>
+        </view>
+        <view class="service-copy">
+          <view class="service-title">{{item.title}}</view>
+          <view class="service-description">{{item.description}}</view>
+        </view>
+        <view class="service-meta">
+          <view>{{item.priceHint}}</view>
+          <view class="meta-separator">·</view>
+          <view>了解详情</view>
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <view class="trust-note">
+    <view class="trust-icon">✓</view>
+    <view class="trust-copy">
+      <view class="trust-title">先了解，再联系顾问</view>
+      <view class="trust-text">小程序提供作品、流程和套餐参考。具体价格、服务内容和拍摄时间以门店顾问确认结果为准。</view>
+    </view>
+  </view>
+</view>

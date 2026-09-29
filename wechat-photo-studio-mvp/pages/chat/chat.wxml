@@ -1,0 +1,40 @@
+<view class="page">
+  <view class="chat-card">
+    <view class="chat-header">
+      <view class="chat-avatar">{{service.icon}}</view>
+      <view class="chat-header-copy">
+        <view class="chat-title">{{service.title}}</view>
+        <view class="chat-subtitle">{{service.description}}</view>
+      </view>
+      <button class="profile-button" disabled="{{isInitializing || identityError}}" bindtap="toggleProfile">{{nickname || '设置称呼'}}</button>
+    </view>
+    <view wx:if="{{showProfile}}" class="input-row">
+      <input class="input" type="nickname" value="{{profileName}}" maxlength="40" bindinput="onProfileInput" placeholder="顾问怎么称呼你（可选）" />
+      <button class="send-button" loading="{{isProfileSaving}}" disabled="{{isProfileSaving || !profileName}}" bindtap="saveProfile">保存</button>
+    </view>
+    <view wx:if="{{isInitializing}}" class="connection-note">正在连接客服…</view>
+    <view wx:if="{{identityError}}" class="connection-note">暂时无法连接客服<button bindtap="initializeChat">重新连接</button></view>
+
+    <scroll-view class="message-list" scroll-y="true" scroll-into-view="{{scrollIntoView}}">
+      <block wx:for="{{messages}}">
+        <view id="message-{{index}}" class="message {{item.role}} {{item.pending ? 'pending' : ''}}">
+          <view class="bubble">{{item.text}}</view>
+        </view>
+      </block>
+    </scroll-view>
+
+    <view class="quick-list">
+      <block wx:for="{{quickQuestions}}" wx:key="*this">
+        <button class="quick-button" disabled="{{isSending || isInitializing || identityError}}" data-question="{{item}}" bindtap="askQuick">{{item}}</button>
+      </block>
+    </view>
+
+    <view class="input-row">
+      <input class="input" value="{{inputValue}}" maxlength="1000" bindinput="onInput" placeholder="输入你想了解的内容" confirm-type="send" bindconfirm="sendMessage" />
+      <button class="send-button" disabled="{{isSending || isInitializing || identityError || !inputValue}}" bindtap="sendMessage">发送</button>
+    </view>
+  </view>
+
+  <button class="lead-button" bindtap="openLead">留下咨询信息 <text class="lead-arrow">→</text></button>
+  <view class="privacy-link" bindtap="openPrivacy">AI 回复仅供咨询 · 隐私说明</view>
+</view>

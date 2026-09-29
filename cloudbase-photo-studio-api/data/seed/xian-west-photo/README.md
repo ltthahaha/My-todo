@@ -22,6 +22,10 @@ CloudBase 控制台虽然让你选择“JSON”文件格式，但文件内容要
 DEFAULT_STUDIO_ID=xian-west-photo
 DOUYIN_APP_ID=tt7a340c89e44f809001
 DOUYIN_APP_SECRETS={"tt7a340c89e44f809001":"对应 AppSecret"}
+WECHAT_APP_ID=wxdb93d05dc105b2a2
+WECHAT_APP_SECRET=微信公众平台对应 AppSecret
+WECHAT_AUTH_TOKEN_SECRET=32位以上随机字符串
+WECHAT_ALLOW_ANONYMOUS=false
 FEISHU_BOT_WEBHOOK=对应飞书群机器人 Webhook
 DINGTALK_BOT_WEBHOOK=对应钉钉群机器人 Webhook
 ```

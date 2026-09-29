@@ -1,0 +1,16 @@
+{
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "newFeature": true,
+    "autoCompile": true,
+    "compileHotReLoad": true
+  },
+  "appid": "wxdb93d05dc105b2a2",
+  "projectname": "wechat-photo-studio-xian-west-consultation",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "./",
+  "condition": {}
+}

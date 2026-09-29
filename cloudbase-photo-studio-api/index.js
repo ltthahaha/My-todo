@@ -17,6 +17,7 @@ const chatCollection = process.env.CLOUDBASE_CHAT_COLLECTION || "chat_messages";
 const chatSessionCollection = process.env.CLOUDBASE_CHAT_SESSION_COLLECTION || "chat_sessions";
 const unansweredCollection = process.env.CLOUDBASE_UNANSWERED_COLLECTION || "unanswered_questions";
 const douyinUserCollection = process.env.CLOUDBASE_DOUYIN_USER_COLLECTION || "douyin_users";
+const wechatUserCollection = process.env.CLOUDBASE_WECHAT_USER_COLLECTION || "wechat_users";
 const adminUserCollection = process.env.CLOUDBASE_ADMIN_USER_COLLECTION || "admin_users";
 const customerStateCollection = process.env.CLOUDBASE_CUSTOMER_STATE_COLLECTION || "customer_states";
 const adminApiToken = asString(process.env.ADMIN_API_TOKEN);
@@ -35,6 +36,8 @@ const douyinAuthTokenSecret = asString(
     process.env.AUTH_TOKEN_SECRET ||
     process.env.ADMIN_API_TOKEN
 );
+const wechatAuthTokenSecret = asString(process.env.WECHAT_AUTH_TOKEN_SECRET);
+const wechatAllowAnonymous = process.env.WECHAT_ALLOW_ANONYMOUS === "true";
 const chatOperationTimeouts = {
   knowledge: 1800,
   chatSessionRead: 700,
@@ -110,15 +113,55 @@ function signUserToken(studioId, userId) {
     .digest("hex");
 }
 
+function signWechatToken(studioId, appId, userId) {
+  if (!wechatAuthTokenSecret || !appId || !userId) return "";
+  const payload = base64UrlEncode(JSON.stringify({
+    studioId, appId, userId, exp: Math.floor(Date.now() / 1000) + 86400
+  }));
+  const signature = crypto.createHmac("sha256", wechatAuthTokenSecret).update(payload).digest("hex");
+  return `${payload}.${signature}`;
+}
+
+function verifyWechatToken(token, studioId, appId, userId) {
+  if (!wechatAuthTokenSecret || !userId.startsWith("wechat_")) return false;
+  const parts = token.split(".");
+  if (parts.length !== 2) return false;
+  const expected = crypto.createHmac("sha256", wechatAuthTokenSecret).update(parts[0]).digest("hex");
+  if (!safeEqual(expected, parts[1])) return false;
+  try {
+    const payload = JSON.parse(base64UrlDecode(parts[0]));
+    return payload.studioId === studioId && payload.appId === appId &&
+      payload.userId === userId && payload.exp > Math.floor(Date.now() / 1000);
+  } catch (error) {
+    return false;
+  }
+}
+
 function verifyRequestUser(source, studioId) {
   const body = source && typeof source === "object" ? source : {};
+  const platform = asString(body.platform) || "douyin-miniapp";
   const userId = asString(body.userId);
   const userToken = asString(body.userToken);
   const anonymousId = asString(body.anonymousId).slice(0, 120);
 
-  if (userId && userToken && signUserToken(studioId, userId) === userToken) {
+  const validToken = platform === "wechat"
+    ? verifyWechatToken(userToken, studioId, asString(body.wechatAppId), userId)
+    : !userId.startsWith("wechat_") && safeEqual(signUserToken(studioId, userId), userToken);
+  if (userId && userToken && validToken) {
+    if (platform === "wechat") {
+      const profile = normalizeWechatProfile(body);
+      return {
+        platform,
+        userId,
+        anonymousId,
+        isAuthenticated: true,
+        ...profile
+      };
+    }
+
     const profile = normalizeDouyinProfile(body);
     return {
+      platform,
       userId,
       anonymousId,
       isAuthenticated: true,
@@ -127,11 +170,40 @@ function verifyRequestUser(source, studioId) {
   }
 
   return {
+    platform,
     userId: "",
     anonymousId,
     isAuthenticated: false,
     douyinNickName: "",
     douyinAvatarUrl: ""
+  };
+}
+
+function normalizeWechatProfile(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const userInfo = source.userInfo && typeof source.userInfo === "object"
+    ? source.userInfo
+    : source;
+  const nickName = asString(
+    userInfo.nickName ||
+    userInfo.nickname ||
+    userInfo.wechatNickName ||
+    source.nickName ||
+    source.wechatNickName
+  ).slice(0, 80);
+  const avatarUrl = asString(
+    userInfo.avatarUrl ||
+    userInfo.avatar ||
+    userInfo.wechatAvatarUrl ||
+    source.avatarUrl ||
+    source.wechatAvatarUrl
+  ).slice(0, 500);
+
+  return {
+    nickName,
+    avatarUrl,
+    wechatNickName: nickName,
+    wechatAvatarUrl: avatarUrl
   };
 }
 
@@ -438,6 +510,87 @@ async function exchangeDouyinCode(code, douyinAppId) {
   };
 }
 
+function getWechatSecretForApp(appId) {
+  const requestedAppId = asString(appId);
+  const secretMapText = asString(process.env.WECHAT_APP_SECRETS);
+
+  if (secretMapText) {
+    try {
+      const secretMap = JSON.parse(secretMapText);
+      const mappedSecret = secretMap && typeof secretMap === "object"
+        ? asString(secretMap[requestedAppId])
+        : "";
+
+      if (mappedSecret) {
+        return mappedSecret;
+      }
+    } catch (error) {
+      console.error("Invalid WECHAT_APP_SECRETS JSON", error);
+    }
+  }
+
+  const defaultAppId = asString(process.env.WECHAT_APP_ID);
+  const defaultSecret = asString(process.env.WECHAT_APP_SECRET);
+
+  return !requestedAppId || requestedAppId === defaultAppId
+    ? defaultSecret
+    : "";
+}
+
+function getWechatConfig(wechatAppId) {
+  const appId = asString(wechatAppId) || asString(process.env.WECHAT_APP_ID);
+
+  return {
+    appId,
+    appSecret: getWechatSecretForApp(appId),
+    code2SessionUrl: asString(process.env.WECHAT_CODE2SESSION_URL) ||
+      "https://api.weixin.qq.com/sns/jscode2session"
+  };
+}
+
+async function exchangeWechatCode(code, wechatAppId) {
+  const config = getWechatConfig(wechatAppId);
+
+  if (!config.appId || !config.appSecret) {
+    return {
+      ok: false,
+      configured: false,
+      reason: "WeChat app credentials are not configured"
+    };
+  }
+
+  const query = new URLSearchParams({
+    appid: config.appId,
+    secret: config.appSecret,
+    js_code: code,
+    grant_type: "authorization_code"
+  });
+  const response = await fetch(`${config.code2SessionUrl}?${query.toString()}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(5000)
+  });
+  const data = await response.json().catch(() => ({}));
+  const openid = asString(data.openid);
+  const unionid = asString(data.unionid);
+
+  if (!response.ok || !openid || data.errcode) {
+    return {
+      ok: false,
+      configured: true,
+      status: response.status,
+      reason: asString(data.errmsg) || String(data.errcode || "WeChat login failed")
+    };
+  }
+
+  return {
+    ok: true,
+    configured: true,
+    openid,
+    unionid
+  };
+}
+
 async function saveDouyinUser(user) {
   const db = getDatabase();
 
@@ -529,6 +682,93 @@ async function getDouyinUsers(studioId) {
   }
 }
 
+async function saveWechatUser(user) {
+  const db = getDatabase();
+
+  if (!db || !user.userId) {
+    return {
+      stored: false,
+      reason: "CloudBase database is not configured"
+    };
+  }
+
+  try {
+    const existing = await db.collection(wechatUserCollection)
+      .where({
+        studioId: user.studioId,
+        userId: user.userId
+      })
+      .limit(1)
+      .get();
+    const previous = Array.isArray(existing.data) ? existing.data[0] : null;
+    const now = new Date();
+    const record = {
+      ...(previous || {}),
+      ...user,
+      updatedAt: now,
+      createdAt: previous && previous.createdAt ? previous.createdAt : now
+    };
+    delete record._id;
+    delete record.id;
+
+    if (previous && previous._id) {
+      await db.collection(wechatUserCollection).doc(previous._id).update(record);
+      return { stored: true, id: previous._id, updated: true };
+    }
+
+    const result = await db.collection(wechatUserCollection).add(record);
+    return {
+      stored: true,
+      id: result.id || result._id || null,
+      updated: false
+    };
+  } catch (error) {
+    console.error("CloudBase WeChat user write failed", error);
+    return {
+      stored: false,
+      reason: error.message || "WeChat user write failed"
+    };
+  }
+}
+
+async function getWechatUser(studioId, userId) {
+  const db = getDatabase();
+
+  if (!db || !studioId || !userId) {
+    return null;
+  }
+
+  try {
+    const result = await db.collection(wechatUserCollection)
+      .where({ studioId, userId })
+      .limit(1)
+      .get();
+    return Array.isArray(result.data) ? result.data[0] || null : null;
+  } catch (error) {
+    console.error("CloudBase WeChat user read failed", error);
+    return null;
+  }
+}
+
+async function getWechatUsers(studioId) {
+  const db = getDatabase();
+
+  if (!db || !studioId) {
+    return [];
+  }
+
+  try {
+    const result = await db.collection(wechatUserCollection)
+      .where({ studioId })
+      .limit(500)
+      .get();
+    return Array.isArray(result.data) ? result.data : [];
+  } catch (error) {
+    console.error("CloudBase WeChat users read failed", error);
+    return [];
+  }
+}
+
 function normalizeAdminUser(value) {
   const source = value && typeof value === "object" ? value : {};
 
@@ -582,6 +822,7 @@ function normalizeStudio(value) {
     name: asString(source.name || source.studioName),
     status: asString(source.status) || "active",
     douyinAppId: asString(source.douyinAppId || source.appId || source.ttAppId),
+    wechatAppId: asString(source.wechatAppId || source.wxAppId),
     apiEnabled: source.apiEnabled !== false
   };
 }
@@ -620,14 +861,18 @@ function getDefaultStudioFallback(studioId) {
     name: asString(process.env.DEFAULT_STUDIO_NAME) || "映白摄影",
     status: "active",
     douyinAppId: asString(process.env.DOUYIN_APP_ID || process.env.TT_APP_ID),
+    wechatAppId: asString(process.env.WECHAT_APP_ID),
     apiEnabled: true,
     fallback: true
   };
 }
 
-async function validateStudioRequest(studioId, douyinAppId) {
+async function validateStudioRequest(studioId, appId, platform = "douyin-miniapp") {
+  if (!["wechat", "douyin-miniapp"].includes(platform)) {
+    return { ok: false, status: 400, error: "Unsupported platform" };
+  }
   const id = asString(studioId) || defaultStudioId;
-  const appId = asString(douyinAppId);
+  const requestedAppId = asString(appId);
   const studio = await getStudioById(id) || getDefaultStudioFallback(id);
 
   if (!studio) {
@@ -646,11 +891,19 @@ async function validateStudioRequest(studioId, douyinAppId) {
     };
   }
 
-  if (studio.douyinAppId && appId && studio.douyinAppId !== appId) {
+  const expectedAppId = platform === "wechat"
+    ? studio.wechatAppId
+    : studio.douyinAppId;
+
+  if (platform === "wechat" && (!expectedAppId || !requestedAppId)) {
+    return { ok: false, status: 403, error: "WeChat AppID binding is required" };
+  }
+
+  if (expectedAppId && requestedAppId && expectedAppId !== requestedAppId) {
     return {
       ok: false,
       status: 403,
-      error: "Douyin AppID does not match studio"
+      error: `${platform === "wechat" ? "WeChat" : "Douyin"} AppID does not match studio`
     };
   }
 
@@ -658,7 +911,9 @@ async function validateStudioRequest(studioId, douyinAppId) {
     ok: true,
     studio,
     studioId: studio.studioId || id,
-    douyinAppId: appId || studio.douyinAppId
+    platform,
+    douyinAppId: platform === "wechat" ? "" : requestedAppId || studio.douyinAppId,
+    wechatAppId: platform === "wechat" ? requestedAppId || studio.wechatAppId : ""
   };
 }
 
@@ -1468,12 +1723,18 @@ function normalizeSessionState(value) {
   return {
     sessionId: asString(source.sessionId),
     studioId: asString(source.studioId),
+    platform: asString(source.platform),
     douyinAppId: asString(source.douyinAppId),
+    wechatAppId: asString(source.wechatAppId),
     userId: asString(source.userId),
     anonymousId: asString(source.anonymousId),
     isAuthenticated: Boolean(source.isAuthenticated),
     douyinNickName: asString(source.douyinNickName).slice(0, 80),
     douyinAvatarUrl: asString(source.douyinAvatarUrl).slice(0, 500),
+    nickName: asString(source.nickName || source.wechatNickName).slice(0, 80),
+    avatarUrl: asString(source.avatarUrl || source.wechatAvatarUrl).slice(0, 500),
+    wechatNickName: asString(source.wechatNickName || source.nickName).slice(0, 80),
+    wechatAvatarUrl: asString(source.wechatAvatarUrl || source.avatarUrl).slice(0, 500),
     profileUpdatedAt: source.profileUpdatedAt || null,
     serviceKey: asString(source.serviceKey),
     serviceType: asString(source.serviceType),
@@ -1496,7 +1757,15 @@ function normalizeSessionState(value) {
   };
 }
 
-async function readSessionState(studioId, sessionId) {
+function sessionOwnerFilter(owner) {
+  if (!owner || owner.platform !== "wechat") return {};
+  return {
+    platform: "wechat", wechatAppId: asString(owner.wechatAppId),
+    ...(owner.userId ? { userId: owner.userId } : { userId: "", anonymousId: asString(owner.anonymousId) })
+  };
+}
+
+async function readSessionState(studioId, sessionId, owner) {
   const db = getDatabase();
 
   if (!db || !sessionId) {
@@ -1505,7 +1774,7 @@ async function readSessionState(studioId, sessionId) {
 
   try {
     const result = await db.collection(chatSessionCollection)
-      .where({ studioId, sessionId })
+      .where({ studioId, sessionId, ...sessionOwnerFilter(owner) })
       .limit(1)
       .get();
     const row = Array.isArray(result.data) ? result.data[0] : null;
@@ -1531,7 +1800,8 @@ async function saveSessionState(state) {
     const existing = await db.collection(chatSessionCollection)
       .where({
         studioId: session.studioId,
-        sessionId: session.sessionId
+        sessionId: session.sessionId,
+        ...sessionOwnerFilter(session)
       })
       .limit(1)
       .get();
@@ -1675,8 +1945,9 @@ function buildLeadHistoryUrl(lead) {
 function buildLeadText(lead) {
   return [
     "新摄影店预约线索",
+    `平台：${lead.platform || "douyin-miniapp"}`,
     `姓名：${lead.name || "未填写"}`,
-    `抖音昵称：${lead.douyinNickName || "未授权"}`,
+    `客户昵称：${lead.douyinNickName || lead.wechatNickName || lead.nickName || "未授权"}`,
     `联系方式：${lead.contact}`,
     `拍摄类型：${lead.serviceType || "未填写"}`,
     `意向日期：${lead.preferredDate || "未填写"}`,
@@ -1881,7 +2152,9 @@ function hasLeadContact(lead) {
 async function captureAiLead({
   studioId,
   sessionId,
+  platform,
   douyinAppId,
+  wechatAppId,
   user,
   message,
   aiResult,
@@ -1919,11 +2192,15 @@ async function captureAiLead({
   }
 
   try {
+    const leadSource = platform === "wechat"
+      ? "wechat-miniapp-ai"
+      : "douyin-miniapp-ai";
     const existing = await db.collection(leadCollection)
       .where({
         studioId,
         sessionId,
-        source: "douyin-miniapp-ai"
+        source: leadSource,
+        ...sessionOwnerFilter({ ...user, platform, wechatAppId })
       })
       .limit(1)
       .get();
@@ -1942,19 +2219,27 @@ async function captureAiLead({
     const lead = {
       studioId,
       sessionId,
+      platform: platform || "douyin-miniapp",
       douyinAppId: asString(douyinAppId),
+      wechatAppId: asString(wechatAppId),
       userId: user && user.userId ? user.userId : "",
       anonymousId: user && user.anonymousId ? user.anonymousId : "",
       isAuthenticated: Boolean(user && user.isAuthenticated),
       douyinNickName: user && user.douyinNickName ? user.douyinNickName : "",
       douyinAvatarUrl: user && user.douyinAvatarUrl ? user.douyinAvatarUrl : "",
+      nickName: user && (user.nickName || user.wechatNickName)
+        ? (user.nickName || user.wechatNickName)
+        : "",
+      avatarUrl: user && (user.avatarUrl || user.wechatAvatarUrl)
+        ? (user.avatarUrl || user.wechatAvatarUrl)
+        : "",
       name: aiLead.name,
       contact: aiLead.contact,
       serviceType: aiLead.serviceType,
       preferredDate: aiLead.preferredDate,
       budget: aiLead.budget,
       note: `AI 自动识别：${message}`,
-      source: "douyin-miniapp-ai",
+      source: leadSource,
       status: "new",
       aiIntent: aiResult.intent || "other",
       aiLeadStage: aiResult.leadStage,
@@ -1984,7 +2269,9 @@ async function captureAiLead({
 async function captureBookingLead({
   studioId,
   sessionId,
+  platform,
   douyinAppId,
+  wechatAppId,
   user,
   sessionState,
   message
@@ -2020,11 +2307,15 @@ async function captureBookingLead({
   }
 
   try {
+    const leadSource = platform === "wechat"
+      ? "wechat-miniapp-booking"
+      : "douyin-miniapp-booking";
     const existing = await db.collection(leadCollection)
       .where({
         studioId,
         sessionId,
-        source: "douyin-miniapp-booking"
+        source: leadSource,
+        ...sessionOwnerFilter({ ...user, platform, wechatAppId })
       })
       .limit(1)
       .get();
@@ -2043,12 +2334,18 @@ async function captureBookingLead({
     const lead = {
       studioId,
       sessionId,
+      platform: platform || "douyin-miniapp",
       douyinAppId: asString(douyinAppId),
+      wechatAppId: asString(wechatAppId),
       userId: user && user.userId ? user.userId : "",
       anonymousId: user && user.anonymousId ? user.anonymousId : "",
       isAuthenticated: Boolean(user && user.isAuthenticated),
       douyinNickName: state.douyinNickName || (user && user.douyinNickName) || "",
       douyinAvatarUrl: state.douyinAvatarUrl || (user && user.douyinAvatarUrl) || "",
+      nickName: state.nickName || state.wechatNickName ||
+        (user && (user.nickName || user.wechatNickName)) || "",
+      avatarUrl: state.avatarUrl || state.wechatAvatarUrl ||
+        (user && (user.avatarUrl || user.wechatAvatarUrl)) || "",
       name: state.name,
       contact,
       serviceType: state.serviceType,
@@ -2059,7 +2356,7 @@ async function captureBookingLead({
         state.destination && `目的地：${state.destination}`,
         state.groupSize && `同行人数：${state.groupSize}`
       ].filter(Boolean).join("；"),
-      source: "douyin-miniapp-booking",
+      source: leadSource,
       status: "new",
       createdAt: new Date()
     };
@@ -2129,6 +2426,7 @@ function finalizeAiReply(reply, leadCapture) {
 
 app.get("/health", (req, res) => {
   const douyinConfig = getDouyinConfig();
+  const wechatConfig = getWechatConfig();
   const envConfigured = Boolean(asString(process.env.CLOUDBASE_ENV_ID));
   const authConfigured = Boolean(
     asString(process.env.CLOUDBASE_APIKEY || process.env.CLOUDBASE_ACCESS_KEY) ||
@@ -2162,6 +2460,7 @@ app.get("/health", (req, res) => {
         chatSessions: chatSessionCollection,
         unansweredQuestions: unansweredCollection,
         douyinUsers: douyinUserCollection,
+        wechatUsers: wechatUserCollection,
         adminUsers: adminUserCollection,
         customerStates: customerStateCollection
       }
@@ -2175,9 +2474,168 @@ app.get("/health", (req, res) => {
       multiAppConfigured: Boolean(asString(process.env.DOUYIN_APP_SECRETS)),
       tokenConfigured: Boolean(douyinAuthTokenSecret)
     },
+    wechatAuth: {
+      configured: Boolean(wechatConfig.appId && wechatConfig.appSecret),
+      multiAppConfigured: Boolean(asString(process.env.WECHAT_APP_SECRETS)),
+      tokenConfigured: Boolean(wechatAuthTokenSecret),
+      anonymousAllowed: wechatAllowAnonymous
+    },
     ai: getAvailability(),
     timestamp: new Date().toISOString()
   });
+});
+
+app.post("/api/photo-studio/auth/wechat-login", async (req, res) => {
+  const code = asString(req.body.code);
+  const requestedStudioId = asString(req.body.studioId) || defaultStudioId;
+  const requestedWechatAppId = asString(req.body.wechatAppId || req.body.appId);
+  const anonymousId = asString(req.body.anonymousId).slice(0, 120);
+
+  if (!code) {
+    res.status(400).json({ ok: false, error: "Missing code" });
+    return;
+  }
+  if (!wechatAuthTokenSecret) {
+    res.status(503).json({ ok: false, error: "WeChat token signing is not configured" });
+    return;
+  }
+
+  try {
+    const studioCheck = await validateStudioRequest(
+      requestedStudioId,
+      requestedWechatAppId,
+      "wechat"
+    );
+
+    if (!studioCheck.ok) {
+      res.status(studioCheck.status).json({
+        ok: false,
+        error: studioCheck.error
+      });
+      return;
+    }
+
+    const loginResult = await exchangeWechatCode(code, studioCheck.wechatAppId);
+
+    if (!loginResult.ok) {
+      res.status(loginResult.configured ? 502 : 503).json({
+        ok: false,
+        error: loginResult.reason || "WeChat login failed",
+        configured: loginResult.configured
+      });
+      return;
+    }
+
+    const userId = `wechat_${sha256(`${studioCheck.wechatAppId}:${loginResult.openid}`).slice(0, 32)}`;
+    const user = {
+      studioId: studioCheck.studioId,
+      wechatAppId: studioCheck.wechatAppId || "",
+      userId,
+      openid: loginResult.openid,
+      unionid: loginResult.unionid || "",
+      anonymousId,
+      platform: "wechat"
+    };
+    const storage = await saveWechatUser(user);
+    const savedUser = await getWechatUser(studioCheck.studioId, userId);
+    const savedProfile = normalizeWechatProfile(savedUser || {});
+
+    res.json({
+      ok: true,
+      studio: {
+        studioId: studioCheck.studioId,
+        name: studioCheck.studio.name,
+        wechatAppId: studioCheck.wechatAppId || ""
+      },
+      user: {
+        userId,
+        anonymousId,
+        platform: "wechat",
+        isAuthenticated: true,
+        ...savedProfile
+      },
+      userToken: signWechatToken(studioCheck.studioId, studioCheck.wechatAppId, userId),
+      expiresIn: 86400,
+      storage
+    });
+  } catch (error) {
+    console.error("WeChat auth login failed", error.name);
+    res.status(502).json({
+      ok: false,
+      error: "WeChat login temporarily unavailable"
+    });
+  }
+});
+
+app.post("/api/photo-studio/auth/wechat-profile", async (req, res) => {
+  const requestedStudioId = asString(req.body.studioId) || defaultStudioId;
+  const requestedWechatAppId = asString(req.body.wechatAppId || req.body.appId);
+  const profile = normalizeWechatProfile(req.body.profile || req.body.userInfo || req.body);
+
+  if (!profile.nickName && !profile.avatarUrl) {
+    res.status(400).json({ ok: false, error: "Missing WeChat profile" });
+    return;
+  }
+
+  try {
+    const studioCheck = await validateStudioRequest(
+      requestedStudioId,
+      requestedWechatAppId,
+      "wechat"
+    );
+
+    if (!studioCheck.ok) {
+      res.status(studioCheck.status || 403).json({
+        ok: false,
+        error: studioCheck.error || "Studio validation failed"
+      });
+      return;
+    }
+
+    const requestUser = verifyRequestUser(
+      { ...req.body, platform: "wechat" },
+      studioCheck.studioId
+    );
+
+    if (!requestUser.isAuthenticated || !requestUser.userId) {
+      res.status(401).json({ ok: false, error: "Unauthorized user" });
+      return;
+    }
+
+    const now = new Date();
+    const storage = await saveWechatUser({
+      studioId: studioCheck.studioId,
+      wechatAppId: studioCheck.wechatAppId || "",
+      userId: requestUser.userId,
+      anonymousId: requestUser.anonymousId,
+      platform: "wechat",
+      ...profile,
+      profileUpdatedAt: now
+    });
+    if (!storage.stored) {
+      res.status(503).json({ ok: false, error: "Profile storage unavailable" });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      user: {
+        userId: requestUser.userId,
+        anonymousId: requestUser.anonymousId,
+        platform: "wechat",
+        isAuthenticated: true,
+        ...profile,
+        profileUpdatedAt: now
+      },
+      storage
+    });
+  } catch (error) {
+    console.error("WeChat profile save failed", error);
+    res.status(502).json({
+      ok: false,
+      error: error.message || "WeChat profile save failed"
+    });
+  }
 });
 
 app.post("/api/photo-studio/auth/login", async (req, res) => {
@@ -2553,12 +3011,15 @@ function createCustomerSummary(record) {
 
   return {
     key,
+    platform: asString(record.platform) || (asString(record.userId).startsWith("wechat_") ? "wechat" : "douyin-miniapp"),
     userId: asString(record && record.userId),
     anonymousId: asString(record && record.anonymousId),
     isAuthenticated: Boolean(record && record.isAuthenticated),
     sessionIds: new Set(),
     douyinNickName: "",
     douyinAvatarUrl: "",
+    wechatNickName: "",
+    wechatAvatarUrl: "",
     profileUpdatedAt: null,
     name: "",
     contact: "",
@@ -2614,6 +3075,10 @@ function touchCustomer(customer, record, type) {
     asString(record.douyinNickName || state.douyinNickName);
   customer.douyinAvatarUrl = customer.douyinAvatarUrl ||
     asString(record.douyinAvatarUrl || state.douyinAvatarUrl);
+  customer.wechatNickName = customer.wechatNickName ||
+    asString(record.wechatNickName || record.nickName || state.wechatNickName || state.nickName);
+  customer.wechatAvatarUrl = customer.wechatAvatarUrl ||
+    asString(record.wechatAvatarUrl || record.avatarUrl || state.wechatAvatarUrl || state.avatarUrl);
   customer.profileUpdatedAt = customer.profileUpdatedAt ||
     record.profileUpdatedAt ||
     state.profileUpdatedAt ||
@@ -2661,10 +3126,12 @@ function touchCustomer(customer, record, type) {
   }
 
   if (type === "user") {
-    customer.douyinNickName = customer.douyinNickName ||
-      asString(record.douyinNickName || record.nickName || state.douyinNickName);
-    customer.douyinAvatarUrl = customer.douyinAvatarUrl ||
-      asString(record.douyinAvatarUrl || record.avatarUrl || state.douyinAvatarUrl);
+    if (customer.platform !== "wechat") {
+      customer.douyinNickName = customer.douyinNickName ||
+        asString(record.douyinNickName || record.nickName || state.douyinNickName);
+      customer.douyinAvatarUrl = customer.douyinAvatarUrl ||
+        asString(record.douyinAvatarUrl || record.avatarUrl || state.douyinAvatarUrl);
+    }
     customer.profileUpdatedAt = customer.profileUpdatedAt ||
       record.profileUpdatedAt ||
       record.updatedAt ||
@@ -2734,11 +3201,31 @@ function enrichCustomersWithDouyinUsers(customers, douyinUsers) {
   });
 }
 
+function enrichCustomersWithWechatUsers(customers, wechatUsers) {
+  const userById = new Map(
+    (Array.isArray(wechatUsers) ? wechatUsers : [])
+      .filter((user) => asString(user && user.userId))
+      .map((user) => [asString(user.userId), user])
+  );
+
+  return customers.map((customer) => {
+    const user = userById.get(customer.userId) || {};
+    return {
+      ...customer,
+      wechatNickName: customer.wechatNickName ||
+        asString(user.wechatNickName || user.nickName).slice(0, 80),
+      wechatAvatarUrl: customer.wechatAvatarUrl ||
+        asString(user.wechatAvatarUrl || user.avatarUrl).slice(0, 500),
+      profileUpdatedAt: customer.profileUpdatedAt || user.profileUpdatedAt || null
+    };
+  });
+}
+
 function buildCustomerFilter(studioId, customerKey) {
   const key = asString(customerKey);
   const filter = { studioId };
 
-  if (key.startsWith("douyin_")) {
+  if (key.startsWith("douyin_") || key.startsWith("wechat_")) {
     filter.userId = key;
   } else if (key.startsWith("anon-")) {
     filter.anonymousId = key;
@@ -2930,13 +3417,16 @@ app.get("/api/photo-studio/admin/customers", requireAdmin, async (req, res) => {
       getOrderedRows(db, chatCollection, { studioId }, "createdAt", "desc", limit * 3),
       getOrderedRows(db, leadCollection, { studioId }, "createdAt", "desc", limit * 2)
     ]);
-    const douyinUsers = await getDouyinUsers(studioId);
-    const customers = enrichCustomersWithDouyinUsers(buildCustomerList({
+    const [douyinUsers, wechatUsers] = await Promise.all([
+      getDouyinUsers(studioId),
+      getWechatUsers(studioId)
+    ]);
+    const customers = enrichCustomersWithWechatUsers(enrichCustomersWithDouyinUsers(buildCustomerList({
       sessions,
       messages,
       leads,
-      users: douyinUsers
-    }), douyinUsers).slice(0, limit);
+      users: [...douyinUsers, ...wechatUsers]
+    }), douyinUsers), wechatUsers).slice(0, limit);
     const customerStates = await getCustomerStates(studioId);
     const stateByCustomer = new Map(
       customerStates.map((state) => [state.customerKey, state])
@@ -2990,14 +3480,19 @@ app.get("/api/photo-studio/admin/customers/:customerKey", requireAdmin, async (r
     const douyinUser = customerKey.startsWith("douyin_")
       ? await getDouyinUser(studioId, customerKey)
       : null;
+    const wechatUser = customerKey.startsWith("wechat_")
+      ? await getWechatUser(studioId, customerKey)
+      : null;
     const customerSummary = buildCustomerList({
       sessions,
       messages,
       leads,
-      users: douyinUser ? [douyinUser] : []
+      users: douyinUser ? [douyinUser] : (wechatUser ? [wechatUser] : [])
     })[0] || {
       key: customerKey,
-      userId: customerKey.startsWith("douyin_") ? customerKey : "",
+      userId: customerKey.startsWith("douyin_") || customerKey.startsWith("wechat_")
+        ? customerKey
+        : "",
       sessionIds: [],
       leadCount: 0,
       chatCount: 0,
@@ -3618,7 +4113,12 @@ app.post("/api/photo-studio/chat", async (req, res) => {
   const serviceType = asString(req.body.serviceType);
   const sessionId = asString(req.body.sessionId);
   const requestedStudioId = asString(req.body.studioId) || defaultStudioId;
+  const requestedPlatform = asString(req.body.platform) || "douyin-miniapp";
   const requestedDouyinAppId = asString(req.body.douyinAppId || req.body.appId);
+  const requestedWechatAppId = asString(req.body.wechatAppId);
+  const requestedAppId = requestedPlatform === "wechat"
+    ? requestedWechatAppId
+    : requestedDouyinAppId;
   const history = Array.isArray(req.body.history) ? req.body.history : [];
   const conversationId = sessionId || `session-${Date.now()}`;
 
@@ -3632,27 +4132,34 @@ app.post("/api/photo-studio/chat", async (req, res) => {
 
   try {
     const studioCheck = await withTimeout(
-      () => validateStudioRequest(requestedStudioId, requestedDouyinAppId),
+      () => validateStudioRequest(requestedStudioId, requestedAppId, requestedPlatform),
       800,
       (() => {
         const fallbackStudio = getDefaultStudioFallback(requestedStudioId);
-        const defaultAppId = fallbackStudio && fallbackStudio.douyinAppId;
-        const appIdMatchesFallback = !requestedDouyinAppId ||
+        const defaultAppId = fallbackStudio && (
+          requestedPlatform === "wechat"
+            ? fallbackStudio.wechatAppId
+            : fallbackStudio.douyinAppId
+        );
+        const appIdMatchesFallback = !requestedAppId ||
           !defaultAppId ||
-          requestedDouyinAppId === defaultAppId;
+          requestedAppId === defaultAppId;
 
         return {
-          ok: Boolean(fallbackStudio && appIdMatchesFallback),
+          ok: requestedPlatform !== "wechat" && Boolean(fallbackStudio && appIdMatchesFallback),
           status: appIdMatchesFallback ? 403 : 403,
           error: appIdMatchesFallback
             ? "Studio validation timed out"
-            : "Douyin AppID does not match studio",
+            : `${requestedPlatform === "wechat" ? "WeChat" : "Douyin"} AppID does not match studio`,
           studioId: requestedStudioId,
-          douyinAppId: requestedDouyinAppId,
+          platform: requestedPlatform,
+          douyinAppId: requestedPlatform === "wechat" ? "" : requestedDouyinAppId,
+          wechatAppId: requestedPlatform === "wechat" ? requestedWechatAppId : "",
           studio: fallbackStudio || {
             studioId: requestedStudioId,
             name: "",
-            douyinAppId: requestedDouyinAppId
+            douyinAppId: requestedPlatform === "wechat" ? "" : requestedDouyinAppId,
+            wechatAppId: requestedPlatform === "wechat" ? requestedWechatAppId : ""
           }
         };
       })()
@@ -3668,8 +4175,13 @@ app.post("/api/photo-studio/chat", async (req, res) => {
 
     const studioId = studioCheck.studioId;
     const requestUser = verifyRequestUser(req.body, studioId);
+    if (requestedPlatform === "wechat" && !requestUser.isAuthenticated &&
+        (!wechatAllowAnonymous || req.body.userToken || !requestUser.anonymousId)) {
+      res.status(401).json({ ok: false, error: "WeChat login is required" });
+      return;
+    }
     const storedSession = await withTimeout(
-      () => readSessionState(studioId, conversationId),
+      () => readSessionState(studioId, conversationId, { ...requestUser, wechatAppId: studioCheck.wechatAppId }),
       chatOperationTimeouts.chatSessionRead,
       null
     );
@@ -3699,7 +4211,9 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         ...(storedSession || {}),
         sessionId: conversationId,
         studioId,
+        platform: requestedPlatform,
         douyinAppId: studioCheck.douyinAppId || (storedSession && storedSession.douyinAppId),
+        wechatAppId: studioCheck.wechatAppId || (storedSession && storedSession.wechatAppId),
         userId: requestUser.userId || (storedSession && storedSession.userId),
         anonymousId: requestUser.anonymousId || (storedSession && storedSession.anonymousId),
         isAuthenticated: requestUser.isAuthenticated ||
@@ -3709,6 +4223,18 @@ app.post("/api/photo-studio/chat", async (req, res) => {
           "",
         douyinAvatarUrl: requestUser.douyinAvatarUrl ||
           (storedSession && storedSession.douyinAvatarUrl) ||
+          "",
+        nickName: requestUser.nickName ||
+          (storedSession && storedSession.nickName) ||
+          "",
+        avatarUrl: requestUser.avatarUrl ||
+          (storedSession && storedSession.avatarUrl) ||
+          "",
+        wechatNickName: requestUser.wechatNickName ||
+          (storedSession && storedSession.wechatNickName) ||
+          "",
+        wechatAvatarUrl: requestUser.wechatAvatarUrl ||
+          (storedSession && storedSession.wechatAvatarUrl) ||
           "",
         serviceKey: serviceKey || (storedSession && storedSession.serviceKey),
         serviceType: serviceContext
@@ -3787,7 +4313,9 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       bookingLead = await captureBookingLead({
         studioId,
         sessionId: conversationId,
+        platform: requestedPlatform,
         douyinAppId: studioCheck.douyinAppId || "",
+        wechatAppId: studioCheck.wechatAppId || "",
         user: requestUser,
         sessionState,
         message
@@ -3853,7 +4381,9 @@ app.post("/api/photo-studio/chat", async (req, res) => {
         () => captureAiLead({
           studioId,
           sessionId: conversationId,
+          platform: requestedPlatform,
           douyinAppId: studioCheck.douyinAppId || "",
+          wechatAppId: studioCheck.wechatAppId || "",
           user: requestUser,
           message,
           aiResult: effectiveAiResult,
@@ -3941,12 +4471,16 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       () => saveChatMessage({
         studioId,
         sessionId: conversationId,
+        platform: requestedPlatform,
         douyinAppId: studioCheck.douyinAppId || "",
+        wechatAppId: studioCheck.wechatAppId || "",
         userId: sessionState.userId || "",
         anonymousId: sessionState.anonymousId || "",
         isAuthenticated: Boolean(sessionState.isAuthenticated),
         douyinNickName: sessionState.douyinNickName || "",
         douyinAvatarUrl: sessionState.douyinAvatarUrl || "",
+        nickName: sessionState.nickName || sessionState.wechatNickName || "",
+        avatarUrl: sessionState.avatarUrl || sessionState.wechatAvatarUrl || "",
         profileUpdatedAt: sessionState.profileUpdatedAt || null,
         userMessage: message,
         reply,
@@ -3989,11 +4523,13 @@ app.post("/api/photo-studio/chat", async (req, res) => {
           isAuthenticated: sessionState.isAuthenticated,
           douyinNickName: sessionState.douyinNickName,
           douyinAvatarUrl: sessionState.douyinAvatarUrl,
+          nickName: sessionState.nickName || sessionState.wechatNickName,
+          avatarUrl: sessionState.avatarUrl || sessionState.wechatAvatarUrl,
           salesStage: sessionState.salesStage,
           pendingField: sessionState.pendingField
         },
         sessionStored: sessionStorage.stored,
-        source: "douyin-miniapp",
+        source: requestedPlatform === "wechat" ? "wechat-miniapp" : "douyin-miniapp",
         createdAt: new Date()
       }),
       chatOperationTimeouts.chatLog,
@@ -4017,7 +4553,9 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       unanswered = await withTimeout(
         () => saveUnansweredQuestion({
           studioId,
+          platform: requestedPlatform,
           douyinAppId: studioCheck.douyinAppId || "",
+          wechatAppId: studioCheck.wechatAppId || "",
           question: message,
           questionKey: normalizeQuestion(message),
           sampleReply: reply,
@@ -4026,7 +4564,7 @@ app.post("/api/photo-studio/chat", async (req, res) => {
           firstAskedAt: now,
           lastAskedAt: now,
           lastSessionId: sessionId || null,
-          source: "douyin-miniapp",
+          source: requestedPlatform === "wechat" ? "wechat-miniapp" : "douyin-miniapp",
           staffNote: "",
           createdAt: now,
           updatedAt: now
@@ -4053,12 +4591,17 @@ app.post("/api/photo-studio/chat", async (req, res) => {
       studio: {
         studioId,
         name: studioCheck.studio && studioCheck.studio.name,
-        douyinAppId: studioCheck.douyinAppId || ""
+        platform: requestedPlatform,
+        douyinAppId: studioCheck.douyinAppId || "",
+        wechatAppId: studioCheck.wechatAppId || ""
       },
       user: {
         userId: sessionState.userId || "",
         anonymousId: sessionState.anonymousId || "",
-        isAuthenticated: Boolean(sessionState.isAuthenticated)
+        isAuthenticated: Boolean(sessionState.isAuthenticated),
+        platform: requestedPlatform,
+        nickName: sessionState.nickName || sessionState.wechatNickName || "",
+        avatarUrl: sessionState.avatarUrl || sessionState.wechatAvatarUrl || ""
       },
       session: {
         stored: sessionStorage.stored,
@@ -4122,15 +4665,26 @@ app.post("/api/photo-studio/chat", async (req, res) => {
 
 app.post("/api/photo-studio/leads", async (req, res) => {
   const requestedStudioId = asString(req.body.studioId) || defaultStudioId;
+  const requestedPlatform = asString(req.body.platform) || "douyin-miniapp";
   const requestedDouyinAppId = asString(req.body.douyinAppId || req.body.appId);
+  const requestedWechatAppId = asString(req.body.wechatAppId);
+  const requestedAppId = requestedPlatform === "wechat"
+    ? requestedWechatAppId
+    : requestedDouyinAppId;
   const lead = {
     studioId: requestedStudioId,
+    platform: requestedPlatform,
     douyinAppId: requestedDouyinAppId,
+    wechatAppId: requestedWechatAppId,
     userId: "",
     anonymousId: "",
     isAuthenticated: false,
     douyinNickName: "",
     douyinAvatarUrl: "",
+    wechatNickName: "",
+    wechatAvatarUrl: "",
+    nickName: "",
+    avatarUrl: "",
     sessionId: asString(req.body.sessionId),
     name: asString(req.body.name),
     contact: asString(req.body.contact),
@@ -4138,7 +4692,8 @@ app.post("/api/photo-studio/leads", async (req, res) => {
     preferredDate: asString(req.body.preferredDate),
     budget: asString(req.body.budget),
     note: asString(req.body.note),
-    source: asString(req.body.source) || "douyin-miniapp",
+    source: asString(req.body.source) ||
+      (requestedPlatform === "wechat" ? "wechat-miniapp" : "douyin-miniapp"),
     status: "new",
     createdAt: new Date()
   };
@@ -4152,7 +4707,11 @@ app.post("/api/photo-studio/leads", async (req, res) => {
   }
 
   try {
-    const studioCheck = await validateStudioRequest(requestedStudioId, requestedDouyinAppId);
+    const studioCheck = await validateStudioRequest(
+      requestedStudioId,
+      requestedAppId,
+      requestedPlatform
+    );
 
     if (!studioCheck.ok) {
       res.status(studioCheck.status || 403).json({
@@ -4164,14 +4723,26 @@ app.post("/api/photo-studio/leads", async (req, res) => {
 
     const requestUser = verifyRequestUser(req.body, studioCheck.studioId);
     lead.studioId = studioCheck.studioId;
+    if (requestedPlatform === "wechat" && !requestUser.isAuthenticated &&
+        (!wechatAllowAnonymous || req.body.userToken || !requestUser.anonymousId)) {
+      res.status(401).json({ ok: false, error: "WeChat login is required" });
+      return;
+    }
     lead.douyinAppId = studioCheck.douyinAppId || "";
+    lead.wechatAppId = studioCheck.wechatAppId || "";
     lead.userId = requestUser.userId;
     lead.anonymousId = requestUser.anonymousId;
     lead.isAuthenticated = requestUser.isAuthenticated;
     lead.douyinNickName = requestUser.douyinNickName || "";
     lead.douyinAvatarUrl = requestUser.douyinAvatarUrl || "";
+    lead.nickName = requestUser.nickName || requestUser.wechatNickName || "";
+    lead.avatarUrl = requestUser.avatarUrl || requestUser.wechatAvatarUrl || "";
     const storage = await saveLead(lead);
     let notification;
+    if (!storage.stored) {
+      res.status(503).json({ ok: false, stored: false, error: "Lead storage unavailable" });
+      return;
+    }
 
     try {
       notification = await notifyLeadChannels(

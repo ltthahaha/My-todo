@@ -1,0 +1,3 @@
+.page { padding: 24px 20px 40px; color: #45534c; font-size: 14px; line-height: 1.8; }
+.title { font-size: 21px; font-weight: 600; color: #26312d; }
+.heading { margin: 24px 0 8px; font-weight: 600; color: #26312d; }

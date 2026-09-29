@@ -1,0 +1,15 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/service/service",
+    "pages/chat/chat",
+    "pages/lead/lead",
+    "pages/privacy/privacy"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#f7f8fa",
+    "navigationBarTitleText": "西区摄影",
+    "navigationBarTextStyle": "black"
+  }
+}

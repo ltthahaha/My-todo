@@ -11,6 +11,8 @@ POST /api/photo-studio/chat
 POST /api/photo-studio/leads
 POST /api/photo-studio/auth/login
 POST /api/photo-studio/auth/profile
+POST /api/photo-studio/auth/wechat-login
+POST /api/photo-studio/auth/wechat-profile
 GET  /api/photo-studio/admin/leads
 PATCH /api/photo-studio/admin/leads/:leadId
 GET  /api/photo-studio/admin/customers
@@ -77,12 +79,18 @@ CLOUDBASE_CHAT_COLLECTION=chat_messages
 CLOUDBASE_CHAT_SESSION_COLLECTION=chat_sessions
 CLOUDBASE_UNANSWERED_COLLECTION=unanswered_questions
 CLOUDBASE_DOUYIN_USER_COLLECTION=douyin_users
+CLOUDBASE_WECHAT_USER_COLLECTION=wechat_users
 CLOUDBASE_ADMIN_USER_COLLECTION=admin_users
 CLOUDBASE_CUSTOMER_STATE_COLLECTION=customer_states
 DOUYIN_APP_ID=tt428a3437dcf0288901
 DOUYIN_APP_SECRET=抖音小程序 AppSecret
 DOUYIN_APP_SECRETS={"tt428a3437dcf0288901":"抖音小程序 AppSecret"}
 DOUYIN_AUTH_TOKEN_SECRET=用于签发小程序用户 token 的随机密钥
+WECHAT_APP_ID=微信小程序 AppID
+WECHAT_APP_SECRET=微信小程序 AppSecret
+WECHAT_APP_SECRETS={"wx_app_id":"微信小程序 AppSecret"}
+WECHAT_AUTH_TOKEN_SECRET=用于签发微信用户 token 的随机密钥
+WECHAT_ALLOW_ANONYMOUS=false
 FEISHU_BOT_WEBHOOK=你的飞书群机器人 Webhook
 DINGTALK_BOT_WEBHOOK=你的钉钉群机器人 Webhook
 ADMIN_API_TOKEN=线索管理后台访问令牌
@@ -154,6 +162,18 @@ customer_states
 ```
 
 `DOUYIN_AUTH_TOKEN_SECRET` 建议填写一段 32 位以上随机字符串。如果不配置，会回退使用 `ADMIN_API_TOKEN`，但正式环境建议单独配置。
+
+### 微信小程序身份
+
+微信版本使用 `wx.login()` 获取临时 code，调用：
+
+```text
+POST /api/photo-studio/auth/wechat-login
+```
+
+服务端使用 `WECHAT_APP_ID` 和 `WECHAT_APP_SECRET` 调用微信 `jscode2session`，生成 `wechat_` 前缀的内部用户 ID，并将用户数据保存到 `wechat_users`。多门店可以使用 `WECHAT_APP_SECRETS` JSON 映射。AppSecret 只能放在 CloudBase 服务端环境变量，不能放进微信小程序或 GitHub。
+
+正式环境必须配置 `WECHAT_APP_SECRET` 和 `WECHAT_AUTH_TOKEN_SECRET`。只有临时联调时才设置 `WECHAT_ALLOW_ANONYMOUS=true`，联调结束应恢复为 `false`。微信请求必须带 `platform: "wechat"` 和 `wechatAppId`，数据会与抖音平台字段隔离。
 
 ### 后台账号登录
 
@@ -354,7 +374,7 @@ AI_DEBUG_RAW_RESPONSE=false
 
 聊天记录会增加 `aiEnabled`、`aiUsed`、`aiFallback`、`aiProvider`、`aiLatencyMs`、`aiIntent`、`aiLeadStage`、`aiLead`、`aiFollowUpQuestion`、`aiLeadCaptureEligible`、`aiLeadStored`、`aiLeadDeduplicated`、`aiLeadId`、`aiLeadNotificationSent` 和 `knowledgeContext` 字段。运营统计接口会返回 `aiAnsweredChats`、`aiFallbackChats` 和 `highIntentChats`。
 
-当 AI 判断客户为 `high_intent` 且提取到联系方式时，聊天接口会自动创建一条 `leads` 记录，来源为 `douyin-miniapp-ai`，并按已配置的通道并行发送飞书和/或钉钉通知。相同 `studioId + sessionId + source` 的后续消息不会重复创建线索。只有数据库保存成功后，客服才会回复“已记录预约意向”；如果没有联系方式或保存失败，不会虚假承诺已经登记。两种群机器人都会带上客户信息和历史聊天链接；一侧发送失败时，响应中的 `notification.partial` 和 `notification.failedChannels` 会标明具体通道。
+当 AI 判断客户为 `high_intent` 且提取到联系方式时，聊天接口会自动创建一条 `leads` 记录，抖音来源为 `douyin-miniapp-ai`、微信来源为 `wechat-miniapp-ai`，并按已配置的通道并行发送飞书和/或钉钉通知。相同门店、平台、用户、会话和来源的后续消息不会重复创建线索。只有数据库保存成功后，客服才会回复“已记录预约意向”；如果没有联系方式或保存失败，不会虚假承诺已经登记。两种群机器人都会带上客户信息和历史聊天链接；一侧发送失败时，响应中的 `notification.partial` 和 `notification.failedChannels` 会标明具体通道。
 
 线索通知环境变量可只配置一个，也可以同时配置：
 
