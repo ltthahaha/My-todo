@@ -125,7 +125,17 @@ Page({
     }).then(response => {
       if (!this._active) return
       if (!response.reply) throw new Error("Empty reply")
-      console.info("chat answer source", { answerSource: response.answerSource, aiUsed: Boolean(response.ai && response.ai.used) })
+      const ai = response.ai || {}
+      console.info("chat answer source", {
+        answerSource: response.answerSource,
+        aiUsed: Boolean(ai.used),
+        aiEnabled: Boolean(ai.enabled),
+        aiConfigured: Boolean(ai.configured),
+        aiFallback: Boolean(ai.fallback),
+        aiFallbackReason: ai.fallbackReason || ai.reason || "",
+        aiSkipped: Boolean(ai.skipped),
+        aiLatencyMs: Number(ai.latencyMs) || null
+      })
       this.finishReply(pendingIndex, response.reply, false)
     }).catch(() => {
       if (this._active) this.finishReply(pendingIndex, "这次未能收到回复，请稍后重试，也可以留下咨询信息让顾问联系你。", true)

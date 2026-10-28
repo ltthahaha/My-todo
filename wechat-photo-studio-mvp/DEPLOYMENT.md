@@ -74,6 +74,8 @@ ARK_MODEL=模型接入点ID
 
 正式环境必须配置 `WECHAT_APP_SECRET` 和 `WECHAT_AUTH_TOKEN_SECRET`。服务端会通过 `wx.login()` 换取微信用户标识，生成 `wechat_...` 用户 ID，并写入 `wechat_users`。只有临时联调时，才同时设置 `WECHAT_ALLOW_ANONYMOUS=true`；联调结束必须恢复为 `false`，否则匿名请求可以伪造客户身份写入线索。
 
+如果聊天响应中的 `ai.used` 为 `false` 且 `ai.fallback` 为 `true`，请先看 `ai.fallbackReason`。当前后端会区分供应商 HTTP 错误：`HTTP 401` 通常表示 API Key 无效或已过期，`HTTP 400` 通常表示模型接入点、请求参数或 `thinking` 配置不匹配，`HTTP 404` 通常表示接口地址或模型不存在，`HTTP 429` 表示限流或额度不足。`AI request timed out` 表示请求超过后端等待上限。排查时可以临时设置 `AI_DEBUG_RAW_RESPONSE=true` 查看 CloudBase 日志中的供应商状态和响应摘要；确认问题后应恢复为 `false`，避免日志长期保存客户对话内容。
+
 ## 4. 微信后台合法域名
 
 在微信公众平台的小程序开发设置中，将 CloudBase HTTPS 服务地址加入 `request 合法域名`。若输入框已提供 `https://` 前缀，只填主机名；若要求完整地址，则包含 `https://`。不要附加 `/api` 等接口路径、端口或末尾斜杠。保存后在微信开发者工具刷新项目配置并重新编译。

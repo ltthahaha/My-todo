@@ -475,7 +475,7 @@ async function generateReply({ message, history, faqs, packages, serviceType }) 
     }
 
     if (!response.ok) {
-      throw new Error(
+      const providerError = new Error(
         data &&
         typeof data === "object" &&
         data.error &&
@@ -483,6 +483,13 @@ async function generateReply({ message, history, faqs, packages, serviceType }) 
           ? data.error.message || data.error.code
           : asString(rawBody) || `AI provider returned ${response.status}`
       );
+      providerError.providerStatus = Number(response.status) || 0;
+      providerError.providerCode = data &&
+        typeof data === "object" &&
+        data.error
+        ? asString(data.error.code)
+        : "";
+      throw providerError;
     }
 
     const rawText = extractText(data) || (typeof data === "string" ? data : "");
@@ -558,9 +565,24 @@ async function generateReply({ message, history, faqs, packages, serviceType }) 
       latencyMs: Date.now() - startedAt
     };
   } catch (error) {
+    const providerStatus = Number(error && error.providerStatus) || 0;
+    const reason = providerStatus
+      ? `AI provider returned HTTP ${providerStatus}`
+      : error.name === "AbortError"
+        ? "AI request timed out"
+        : "AI request failed";
+
+    console.warn("AI provider request failed", {
+      provider: config.provider,
+      model: config.model,
+      status: providerStatus || null,
+      code: asString(error && error.providerCode) || null,
+      reason
+    });
+
     return {
       unavailable: true,
-      reason: error.name === "AbortError" ? "AI request timed out" : "AI request failed",
+      reason,
       latencyMs: Date.now() - startedAt
     };
   } finally {
